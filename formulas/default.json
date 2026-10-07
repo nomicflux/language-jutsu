@@ -1,0 +1,9 @@
+{
+  "sequencing": "timing-then-joining",
+  "segments": [0.75, 0.9, 1.0, 1.1],
+  "joining": {
+    "group_size": 3
+  },
+  "repetitions": 1,
+  "gap_ms": 500
+}
