@@ -1,6 +1,15 @@
 mod app;
 mod cli;
+mod format;
 mod formula;
+mod media;
+mod metadata;
+mod render;
+mod segmentation;
+mod sequence;
+mod source;
+mod transcription;
+mod window;
 
 use std::{error::Error, process::ExitCode};
 
@@ -18,6 +27,5 @@ fn main() -> ExitCode {
 
 fn execute() -> Result<(), Box<dyn Error>> {
     let request = cli::Request::try_from(cli::Args::parse())?;
-    let formula = formula::Formula::load(&request.formula_path)?;
-    app::run(request, formula)
+    app::run(request)
 }

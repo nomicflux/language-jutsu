@@ -1,10 +1,8 @@
-use std::{
-    error::Error, fmt, fs::File, io::BufReader, num::NonZeroUsize, path::Path, time::Duration,
-};
+use std::{fmt, num::NonZeroUsize, time::Duration};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Sequencing {
     TimingThenJoining,
@@ -20,7 +18,15 @@ impl fmt::Display for Sequencing {
     }
 }
 
+#[derive(Serialize)]
+#[serde(transparent)]
 pub(crate) struct Speed(f64);
+
+impl Speed {
+    pub(crate) fn factor(&self) -> f64 {
+        self.0
+    }
+}
 
 impl fmt::Display for Speed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -87,11 +93,14 @@ impl TryFrom<RawFormula> for Formula {
 }
 
 impl Formula {
-    pub(crate) fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
-        let file = File::open(path)
-            .map_err(|error| format!("cannot open formula {}: {error}", path.display()))?;
-        serde_json::from_reader(BufReader::new(file))
-            .map_err(|error| format!("invalid formula {}: {error}", path.display()).into())
+    pub(crate) fn document(&self) -> serde_json::Value {
+        serde_json::json!({
+            "sequencing": self.sequencing,
+            "segments": self.speeds,
+            "joining": { "group_size": self.group_size.get() },
+            "repetitions": self.repetitions.get(),
+            "gap_ms": self.gap.as_millis()
+        })
     }
 
     pub(crate) fn sequencing(&self) -> &Sequencing {

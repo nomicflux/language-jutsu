@@ -1,99 +1,157 @@
 use std::{fmt, path::PathBuf};
 
-use clap::{Parser, ValueEnum};
+use crate::{
+    segmentation::ChunkTargetSize,
+    source::{Source, YouTubeVideo},
+    window,
+};
+use clap::{ArgGroup, Parser};
+use serde::Serialize;
 
 #[derive(Parser)]
 #[command(version, about)]
+#[command(group(ArgGroup::new("source").args(["input", "url"]).required(true).multiple(false)))]
+#[command(group(ArgGroup::new("mode").args(["check", "decode_only", "segment_only", "sequence_only", "transcribe"]).multiple(false)))]
 pub(crate) struct Args {
     /// Source audio file.
-    input: PathBuf,
+    input: Option<PathBuf>,
+
+    /// Single YouTube video to download before processing.
+    #[arg(long)]
+    url: Option<YouTubeVideo>,
+
+    /// Start on the original source timeline: seconds, MM:SS, or HH:MM:SS.
+    #[arg(long)]
+    start: Option<window::Timestamp>,
+
+    /// Exclusive end on the original source timeline; omitted means end of recording.
+    #[arg(long)]
+    end: Option<window::Timestamp>,
 
     /// Language of the source recording.
-    #[arg(long, value_enum)]
-    language: Language,
+    #[arg(long, value_parser = nonempty_label)]
+    language: String,
 
-    /// Optional Arabic dialect label.
-    #[arg(long, value_enum)]
-    dialect: Option<Dialect>,
+    /// Optional dialect label retained in metadata.
+    #[arg(long, value_parser = nonempty_label)]
+    dialect: Option<String>,
 
-    /// JSON formula; otherwise read formulas/default.json beside the executable.
-    #[arg(long)]
-    formula: Option<PathBuf>,
+    /// Complete format JSON; otherwise read formats/default.json beside the executable.
+    #[arg(long, conflicts_with = "transcribe")]
+    format: Option<PathBuf>,
 
-    /// Destination study audio file.
+    /// Target source chunk duration in seconds; overrides format.chunking.
+    #[arg(long, conflicts_with_all = ["decode_only", "transcribe"])]
+    chunk_target_size_seconds: Option<ChunkTargetSize>,
+
+    /// Study audio, decoded PCM, JSON report, or transcript text.
     #[arg(long)]
     output: PathBuf,
 
-    /// Check the input path and formula without processing audio.
+    /// Check the source and complete format without processing audio or downloading.
     #[arg(long)]
     check: bool,
+
+    /// Decode to interleaved f32le PCM and write a companion .json metadata file.
+    #[arg(long)]
+    decode_only: bool,
+
+    /// Decode and find pause-based units without generating study audio.
+    #[arg(long)]
+    segment_only: bool,
+
+    /// Expand the formula into a JSON sequence without rendering audio.
+    #[arg(long)]
+    sequence_only: bool,
+
+    /// Transcribe the selected source audio with MLX Whisper, without a playback format.
+    #[arg(long)]
+    transcribe: bool,
+
+    /// Python executable with mlx-whisper installed (transcription only).
+    #[arg(long, requires = "transcribe")]
+    whisper_python: Option<PathBuf>,
+
+    /// MLX Whisper model directory or Hugging Face repository (transcription only).
+    #[arg(long, requires = "transcribe")]
+    whisper_model: Option<String>,
+
+    /// Retain the full downloaded source and its provenance sidecar at this path.
+    #[arg(long, requires = "url", conflicts_with = "check")]
+    save_source: Option<PathBuf>,
+
+    /// Write render metadata, including actual duration, to this JSON file.
+    #[arg(long, conflicts_with_all = ["check", "decode_only", "segment_only", "sequence_only", "transcribe"])]
+    metadata_output: Option<PathBuf>,
 }
 
-#[derive(Clone, ValueEnum)]
-enum Language {
-    Ar,
-    Ja,
-    Es,
-}
-
-#[derive(Clone, ValueEnum)]
-pub(crate) enum Dialect {
-    Shami,
-    Masri,
-}
-
-impl fmt::Display for Dialect {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Shami => "shami",
-            Self::Masri => "masri",
-        })
+fn nonempty_label(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("language and dialect labels must not be empty".into())
+    } else {
+        Ok(value.to_owned())
     }
 }
 
-pub(crate) enum LanguageSetting {
-    Arabic { dialect: Option<Dialect> },
-    Japanese,
-    Spanish,
+#[derive(Serialize)]
+pub(crate) struct LanguageSetting {
+    code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dialect: Option<String>,
+}
+
+impl LanguageSetting {
+    pub(crate) fn code(&self) -> &str {
+        &self.code
+    }
 }
 
 impl fmt::Display for LanguageSetting {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Arabic {
-                dialect: Some(dialect),
-            } => write!(formatter, "ar ({dialect})"),
-            Self::Arabic { dialect: None } => formatter.write_str("ar"),
-            Self::Japanese => formatter.write_str("ja"),
-            Self::Spanish => formatter.write_str("es"),
+        match &self.dialect {
+            Some(dialect) => write!(formatter, "{} ({dialect})", self.code),
+            None => formatter.write_str(&self.code),
         }
     }
 }
 
 pub(crate) enum Mode {
     Check,
+    Decode,
+    Segment,
+    Sequence,
     Render,
+    Transcribe,
 }
 
 pub(crate) struct Request {
-    pub(crate) input: PathBuf,
+    pub(crate) source: Source,
     pub(crate) language: LanguageSetting,
-    pub(crate) formula_path: PathBuf,
+    pub(crate) format_path: PathBuf,
     pub(crate) output: PathBuf,
     pub(crate) mode: Mode,
+    pub(crate) window: window::Request,
+    pub(crate) chunk_target_size_seconds: Option<ChunkTargetSize>,
+    pub(crate) whisper: crate::transcription::Options,
+    pub(crate) save_source: Option<PathBuf>,
+    pub(crate) metadata_output: Option<PathBuf>,
 }
 
 impl TryFrom<Args> for Request {
     type Error = String;
 
     fn try_from(args: Args) -> Result<Self, Self::Error> {
-        let language = match (args.language, args.dialect) {
-            (Language::Ar, dialect) => LanguageSetting::Arabic { dialect },
-            (Language::Ja, None) => LanguageSetting::Japanese,
-            (Language::Es, None) => LanguageSetting::Spanish,
-            (_, Some(_)) => return Err("--dialect is only valid with --language ar".into()),
+        let window = window::Request::new(args.start, args.end)?;
+        let source = match (args.input, args.url) {
+            (Some(path), None) => Source::File(path),
+            (None, Some(video)) => Source::YouTube(video),
+            _ => return Err("supply exactly one audio file or --url".into()),
         };
-        let formula_path = match args.formula {
+        let language = LanguageSetting {
+            code: args.language,
+            dialect: args.dialect,
+        };
+        let format_path = match args.format {
             Some(path) => path,
             None => {
                 let executable = std::env::current_exe()
@@ -101,20 +159,39 @@ impl TryFrom<Args> for Request {
                 executable
                     .parent()
                     .ok_or("executable has no parent directory")?
-                    .join("formulas/default.json")
+                    .join("formats/default.json")
             }
         };
 
+        let mode = if args.transcribe {
+            Mode::Transcribe
+        } else if args.decode_only {
+            Mode::Decode
+        } else if args.check {
+            Mode::Check
+        } else if args.segment_only {
+            Mode::Segment
+        } else if args.sequence_only {
+            Mode::Sequence
+        } else {
+            Mode::Render
+        };
         Ok(Self {
-            input: args.input,
+            source,
             language,
-            formula_path,
+            format_path,
             output: args.output,
-            mode: if args.check {
-                Mode::Check
-            } else {
-                Mode::Render
+            mode,
+            window,
+            chunk_target_size_seconds: args.chunk_target_size_seconds,
+            whisper: crate::transcription::Options {
+                python: args.whisper_python.unwrap_or_else(|| "python3".into()),
+                model: args
+                    .whisper_model
+                    .unwrap_or_else(|| "mlx-community/whisper-large-v3-turbo".into()),
             },
+            save_source: args.save_source,
+            metadata_output: args.metadata_output,
         })
     }
 }
