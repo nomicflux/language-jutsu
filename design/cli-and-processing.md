@@ -1,6 +1,6 @@
 # CLI and processing model
 
-Draft date: 7 October 2026. These are proposed interfaces and data concepts, not implemented commands or Rust code.
+Design date: 7 October 2026; updated 9 October 2026. Configuration, decoding, source-window selection, segmentation, sequence planning, and study-track rendering are implemented.
 
 ## Command interface
 
@@ -8,7 +8,7 @@ Draft date: 7 October 2026. These are proposed interfaces and data concepts, not
 language-jutsu input.wav --language ar --dialect shami --output study.mp3
 
 language-jutsu input.wav --language ar --dialect masri \
-  --formula formulas/my-formula.json --output study.mp3
+  --format formats/my-format.json --output study.mp3
 
 language-jutsu input.wav --language ja --output study.mp3
 
@@ -19,22 +19,28 @@ Input file, language, and output path are required. Proposed language values are
 
 The language setting is retained as run context and reported in the CLI summary. If language-specific speech analysis is used, it receives this setting. Basic pause detection is language-independent; the design does not claim different acoustic cuts just because the label changes.
 
-The proposed output is one MP3 study track containing the sequence of learning chunks. Individual files per practice group could be an alternative export layout, but are not needed to define the sequence. The output format remains a design choice to workshop.
+Output is one MP3 or float-PCM WAV study track containing the sequence of learning chunks. WAV provides a lossless review format; MP3 serves ordinary listening players.
 
-## Formula resolution
+## Source window
 
-With `--formula`, read exactly that JSON file. Without it, read the distributed `formulas/default.json` alongside the installed executable. Explicit relative paths are resolved against the caller's working directory; the distributed default's location is relative to the executable.
+Optional `--start` and `--end` accept nonnegative seconds, `MM:SS`, or `HH:MM:SS`, with up to nine fractional-second digits. They refer to the decoded original timeline: start inclusive, end exclusive. Missing start means zero; missing end means the decoded recording's end. Explicit bounds must be ordered, within the recording, and select at least one frame. No bound is silently clamped.
 
-The [default JSON](../formulas/default.json) is a separate editable distribution asset, not a JSON string compiled into the binary.
+The source is decoded once before selection, avoiding approximate compressed-media seeks. Each bound rounds upward to a sample-frame boundary, selecting exactly those sample positions inside the requested half-open interval. The full source metadata and requested times remain available alongside the resolved frame range. Segmentation reads only that range, and every unit and joined span keeps its absolute source positions. Output timing begins at zero.
 
-The CLI resolves and parses the formula before media processing. The processing core requires a complete `Formula` argument and has no optional-formula overload or default constructor. Missing, unreadable, or invalid formula data produces an error. No recipe values are supplied by a hidden code fallback.
+`--decode-only` exports the selected PCM. Its sidecar retains the whole source's `frame_count` and adds `pcm_frame_count` for the exported selection. `--segment-only` and `--sequence-only` retain the selection in their source metadata. `--check` validates time syntax and explicit ordering without decoding; it cannot validate the recording's actual end.
+
+## Format resolution
+
+`--format` selects one complete JSON file. Without it, load `formats/default.json` beside the executable. Explicit paths remain relative to the caller's working directory. The format has `chunking` and `playback` sections, both required in every mode. Parse it once before media processing and apply `--chunk-target-size-seconds` to `chunking` for this run. Missing or invalid fields fail with a format diagnostic; the file remains unchanged and there are no compiled fallback settings.
+
+The processing core receives the validated format. Segmentation reads its chunking settings, while sequence construction and rendering read its playback formula. The distributed JSON and migrated presets contain both sections. The separate configuration-path options have been replaced by `--format`.
 
 ## Domain concepts
 
 | Concept | Information retained |
 | --- | --- |
 | Language setting | Arabic with an optional supplied dialect, Japanese, or Spanish |
-| Audio source | Original media, duration, sample rate/timebase, channels, and language setting |
+| Audio source | Original media, duration, sample rate/timebase, channels, language setting, requested window, and resolved source frame range |
 | Practice unit | A nonempty source-time interval in the original recording |
 | Practice group | Ordered consecutive units participating in one local build |
 | Formula | Sequencing choice, ordered positive speed factors, group size, repeat count, and output gap duration |
@@ -48,8 +54,8 @@ Joined spans retain their participating units as well as the enclosing source in
 ## Transformation flow
 
 ```text
-CLI arguments + formula file → parsed request with required Formula
-audio file → decoded Audio source
+CLI arguments + format file → parsed request with required Format
+audio file + optional window bounds → decoded Audio source with selected frame range
 Audio source + segmentation settings → ordered Practice units
 Practice units + Formula → Practice groups → Learning sequence
 Audio source + Learning sequence → rendered study audio
@@ -59,11 +65,11 @@ Formula parsing, audio analysis, sequence construction, and rendering have separ
 
 ## Input segmentation
 
-Significant pauses are sufficient boundaries. A simple starting proposal is to detect sustained low-volume intervals and place a cut within each suitable pause. Source units stay ordered, and the full spoken material receives practice. Very short fragments can be merged; long units can use smaller pauses for further cuts.
+The format's `chunking` section contains only `chunk_target_size_seconds`, default 6 in the distributed file. `--chunk-target-size-seconds` overrides it for a run. It measures source duration before tempo processing.
 
-Pause sensitivity has at least two settings: the signal level treated as quiet and how long quiet must persist. FFmpeg's `silencedetect` exposes both and is one candidate alongside speech-activity detection. Low amplitude is a proxy, so music, noise, and quiet speech need listening checks. No numerical segmentation defaults have been selected. [FFmpeg silence detection](https://ffmpeg.org/ffmpeg-filters.html#silencedetect).
+Detection fits local low/high energy levels from per-channel PCM measurements. Short low-energy gaps remain candidates, with confidence based on their contrast against both neighboring sides and their duration. Unconfirmed low-energy regions are reanalyzed to distinguish quieter speakers from pauses. Boundary selection ranks confidence and target proximity, favoring earlier locations on ties. Fragment handling scales with the target rather than using a fixed minimum duration.
 
-Desired unit length is a preference rather than a reason to cut through speech at an exact second. A long run without usable pauses remains a limitation of simple pause detection: finer speech-assisted cuts may be needed. Keep a larger intelligible unit when a finer cut is uncertain; do not silently omit it.
+The window end is a final candidate. Source positions remain absolute, every source frame is retained, and long uninterrupted spans remain whole when no useful pause exists. The model is an acoustic heuristic, not grammatical or word alignment. The [adaptive chunking plan](./adaptive-chunking-plan.md) records the algorithm and actual tests. Manual detector fields have been removed from the format.
 
 Language-specific transcription and alignment remain optional refinements. The first-pass CLI does not depend on proving Wispr's timing or verbatim capabilities. See the [speech technology research](../research/technical-options.md).
 
@@ -71,8 +77,10 @@ Language-specific transcription and alignment remain optional refinements. The f
 
 Read each play's continuous original source interval, apply its tempo change, and append the next practice gap where one is specified. For A+B, stretch the complete source interval once. Do not combine independently stretched versions of A and B with practice silence between them.
 
-Keep pitch stable as tempo changes. Decode before composing the sequence and encode the finished result, avoiding repeated compression of small pieces. The actual time-stretch engine remains a choice to audition. FFmpeg supplies tempo and trim filters; Signalsmith Stretch is another researched candidate. [Rendering options](../research/technical-options.md#slower-and-faster-playback).
+Pitch-preserving processing uses FFmpeg `atempo`, chained in 0.5–2 factors for speeds outside that interval. At 1.0×, copy original PCM unchanged. Each play reads its exact frame range into a temporary clip; processing the entire joined span keeps original pauses continuous. Append the configured output gap, rounded upward to whole frames, except after the final play. Assemble temporary PCM and encode once to MP3 or WAV. This avoids repeated lossy compression and a filter graph growing with the number of plays. [Rendering options](../research/technical-options.md#slower-and-faster-playback).
 
-The CLI summary should report the input, supplied language/dialect, formula path, unit/group/play counts, estimated duration before rendering, and output path and actual duration afterward. Duration is a planning aid, not a reason to reduce the requested repetition.
+Working sample rate, channel count, and known channel layout are preserved. Unsupported MP3 source rates/channel counts produce an error directing the caller to WAV, without automatic conversion. Backend failures discard temporary output; successful files are published without replacing an existing destination. The CLI reports actual assembled PCM duration separately from the pre-render estimate. The user accepted the Shami sample's speech quality; other target-language listening checks remain pending.
 
-Input errors, formula errors, inability to form usable units, and rendering failures should be distinguishable to the caller. No output should be reported as complete when rendering fails.
+The CLI summary should report the input, supplied language/dialect, format path, unit/group/play counts, estimated duration before rendering, and output path and actual duration afterward. Duration is a planning aid, not a reason to reduce the requested repetition.
+
+Input errors, format errors, inability to form usable units, and rendering failures should be distinguishable to the caller. No output should be reported as complete when rendering fails.

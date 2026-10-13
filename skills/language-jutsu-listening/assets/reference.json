@@ -1,0 +1,10 @@
+{
+  "chunking": { "chunk_target_size_seconds": 6 },
+  "playback": {
+    "sequencing": "timing-then-joining",
+    "segments": [1.0],
+    "joining": { "group_size": 1 },
+    "repetitions": 1,
+    "gap_ms": 0
+  }
+}

@@ -1,6 +1,6 @@
 # Language Jutsu research and design
 
-Research date: 7 October 2026. Current phase: research and brainstorming.
+Research began 7 October 2026; YouTube ingestion research added 9 October 2026. Current implementation and planned extensions are recorded in the design documents.
 
 The [first-pass CLI design](../design/README.md) now makes the requested formula sequencing concrete. The research below remains background; draft design choices are identified in the design documents.
 
@@ -46,6 +46,8 @@ Significant pauses are sufficient candidate boundaries. Units should be reasonab
 
 ## Research documents
 
+- [Spotify ingestion](./spotify-ingestion.md): public podcast/RSS audio, selective passthrough links, and limits of Spotify playback APIs.
+- [YouTube ingestion](./youtube-ingestion.md): current downloader/runtime requirements and integration into the implemented CLI.
 - [Broader listening research](./listening-research-survey.md): sound familiarization, word recognition, comprehension, captions, extensive listening, spacing, attention, and walking studies.
 - [Listening experience and learning evidence](./listening-design.md): concrete learner interaction, repetition research, phrase boundaries, and questions for further design.
 - [Automated study audio](./automated-study-audio.md): preparing an entire selected recording for unattended repetition, speed changes, progressive joining, and revisits.

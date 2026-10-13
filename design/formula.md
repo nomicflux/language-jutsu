@@ -1,20 +1,25 @@
 # Formula and sequence semantics
 
-Draft date: 7 October 2026. The required controls are timing changes and sequencing between timing and joining. The additional fields below are proposed first-pass controls.
+Design date: 7 October 2026; updated 9 October 2026. The required controls are timing changes and sequencing between timing and joining. The additional fields below are proposed first-pass controls.
 
 ## Editable JSON
 
-The proposed default is saved at [formulas/default.json](../formulas/default.json):
+The complete default format is saved at [formats/default.json](../formats/default.json). Its `playback` section is the learning formula; `chunking` supplies target duration and pause sensitivity in the same file.
 
 ```json
 {
-  "sequencing": "timing-then-joining",
-  "segments": [0.75, 0.9, 1.0, 1.1],
-  "joining": {
-    "group_size": 3
+  "chunking": {
+    "chunk_target_size_seconds": 6
   },
-  "repetitions": 1,
-  "gap_ms": 500
+  "playback": {
+    "sequencing": "timing-then-joining",
+    "segments": [0.75, 0.9, 1.0, 1.1],
+    "joining": {
+      "group_size": 3
+    },
+    "repetitions": 1,
+    "gap_ms": 500
+  }
 }
 ```
 
@@ -106,7 +111,7 @@ Both sequencing choices have the same estimated duration for the same groups, sp
 - `segments` must be a nonempty array of finite, positive numbers. Preserve its supplied order and duplicates; do not sort or deduplicate it.
 - `joining.group_size` and `repetitions` must be positive integers.
 - `gap_ms` must be a nonnegative integer.
-- All five top-level fields are required in this proposed extended format. A custom formula replaces the default formula completely; it is not merged with missing fields from another recipe.
+- All five fields in `playback` are required, as are the complete `chunking` settings. `--format` selects one complete file; missing fields are not merged from another preset.
 - Use strict JSON: the comment in the user's illustrative example is explanatory and is omitted from the actual file.
 
 Report invalid or missing fields before rendering. Unsupported renderer speeds must be reported rather than silently clamped. A missing JSON file must not trigger an internal default recipe.
