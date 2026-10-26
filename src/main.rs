@@ -1,3 +1,4 @@
+mod anki;
 mod app;
 mod cli;
 mod format;
@@ -26,6 +27,10 @@ fn main() -> ExitCode {
 }
 
 fn execute() -> Result<(), Box<dyn Error>> {
-    let request = cli::Request::try_from(cli::Args::parse())?;
+    let mut args = cli::Args::parse();
+    if let Some(cli::Command::Anki { input, output }) = args.command.take() {
+        return anki::build(&input, &output);
+    }
+    let request = cli::Request::try_from(args)?;
     app::run(request)
 }

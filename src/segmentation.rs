@@ -72,20 +72,18 @@ struct EnergyWindow {
     power: f64,
 }
 
-// Infer two local level groups; their midpoint separates quiet from active sound.
-// Zero samples are handled independently so digital silence cannot dominate the fit.
-fn adaptive_threshold(windows: &[EnergyWindow]) -> Option<f64> {
-    let levels: Vec<_> = windows
-        .iter()
-        .filter(|window| window.power > 0.0)
-        .map(|window| 10.0 * window.power.log10())
-        .collect();
+struct Pause {
+    range: FrameRange,
+    clarity: f64,
+}
+
+fn level_groups(levels: &[f64]) -> Option<(f64, f64)> {
     let mut low = levels.iter().copied().reduce(f64::min)?;
     let mut high = levels.iter().copied().reduce(f64::max)?;
     for _ in 0..12 {
         let split = (low + high) / 2.0;
         let (mut low_sum, mut high_sum, mut low_count, mut high_count) = (0.0, 0.0, 0, 0);
-        for &level in &levels {
+        for &level in levels {
             if level <= split {
                 low_sum += level;
                 low_count += 1;
@@ -95,7 +93,7 @@ fn adaptive_threshold(windows: &[EnergyWindow]) -> Option<f64> {
             }
         }
         if low_count == 0 || high_count == 0 {
-            break;
+            return None;
         }
         let next_low = low_sum / f64::from(low_count);
         let next_high = high_sum / f64::from(high_count);
@@ -106,8 +104,49 @@ fn adaptive_threshold(windows: &[EnergyWindow]) -> Option<f64> {
             break;
         }
     }
+    Some((low, high))
+}
+
+// Infer two local level groups; their midpoint separates quiet from active sound.
+// Zero samples are handled independently so digital silence cannot dominate the fit.
+fn adaptive_threshold(windows: &[EnergyWindow]) -> Option<f64> {
+    let levels: Vec<_> = windows
+        .iter()
+        .filter(|window| window.power > 0.0)
+        .map(|window| 10.0 * window.power.log10())
+        .collect();
+    let (low, high) = level_groups(&levels)?;
     // Avoid interpreting small RMS fluctuations in a steady signal as pauses.
     (high - low >= 3.0).then(|| 10_f64.powf((low + high) / 20.0))
+}
+
+// Learn a persistence scale from nearby gaps, independently of the chunk target.
+// Sparse or indistinguishable groups retain the 80 ms baseline. Bounds prevent
+// tiny dips from becoming "pauses" or long sentence breaks excluding brief gaps.
+fn pause_persistence(pauses: &[Pause], index: usize, rate: u32) -> f64 {
+    let center = pauses[index].range.start_frame;
+    let radius = u64::from(rate) * 10;
+    let first =
+        pauses.partition_point(|pause| pause.range.start_frame < center.saturating_sub(radius));
+    let last =
+        pauses.partition_point(|pause| pause.range.start_frame <= center.saturating_add(radius));
+    let durations: Vec<_> = pauses[first..last]
+        .iter()
+        .map(|pause| {
+            ((pause.range.end_frame - pause.range.start_frame) as f64 / f64::from(rate)).ln()
+        })
+        .collect();
+    if let Some((short, long)) = level_groups(&durations) {
+        let split = (short + long) / 2.0;
+        let short_count = durations
+            .iter()
+            .filter(|&&duration| duration <= split)
+            .count();
+        if short_count >= 3 && durations.len() - short_count >= 3 && long - short >= 2_f64.ln() {
+            return split.exp().clamp(0.06, 0.12);
+        }
+    }
+    0.08
 }
 
 pub(crate) fn analyze(
@@ -153,7 +192,8 @@ pub(crate) fn analyze(
         return Err("selected audio has no nonzero signal".into());
     }
 
-    let block = usize::try_from(target_frames.div_ceil(window_frames))?.max(100);
+    // Acoustic evidence must not change when the learner changes the chunk target.
+    let block = usize::try_from((u64::from(rate) * 5).div_ceil(window_frames))?;
     let mut quiet = Vec::with_capacity(windows.len());
     for begin in (0..windows.len()).step_by(block) {
         let end = begin.saturating_add(block).min(windows.len());
@@ -212,11 +252,13 @@ pub(crate) fn analyze(
             };
             if peak < surroundings && depth >= 0.5 {
                 confirmed = true;
-                let midpoint = range.start_frame + (range.end_frame - range.start_frame) / 2;
-                if selected.end_frame - midpoint >= minimum_unit {
-                    let confidence = depth * (end - begin) as f64 / ((end - begin) as f64 + 2.0);
-                    candidates.push((midpoint, confidence));
-                }
+                candidates.push(Pause {
+                    range: FrameRange {
+                        start_frame: range.start_frame,
+                        end_frame: range.end_frame,
+                    },
+                    clarity: depth * (1.0 - peak / surroundings).sqrt(),
+                });
             }
         }
         if !confirmed {
@@ -242,27 +284,63 @@ pub(crate) fn analyze(
         quiet_intervals.push(range);
     }
     quiet_intervals.sort_by_key(|range| (range.start_frame, range.end_frame));
-    candidates.sort_by_key(|&(midpoint, _)| midpoint);
+    candidates.sort_by_key(|pause| pause.range.start_frame);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(index, pause)| {
+            let persistence = pause_persistence(&candidates, index, rate);
+            let duration =
+                (pause.range.end_frame - pause.range.start_frame) as f64 / f64::from(rate);
+            if duration < persistence {
+                return None;
+            }
+            // Once a gap is comfortably sustained, extra silence adds little quality.
+            let quality = pause.clarity * (1.0 - 0.5 * (1.0 - duration / persistence).exp());
+            let margin = (u64::from(rate) * 30)
+                .div_ceil(1000)
+                .min((pause.range.end_frame - pause.range.start_frame) / 2);
+            Some((
+                FrameRange {
+                    start_frame: pause.range.start_frame + margin,
+                    end_frame: pause.range.end_frame - margin,
+                },
+                quality,
+            ))
+        })
+        .collect();
 
     let mut boundaries = vec![selected.start_frame];
     let mut chunk_start = selected.start_frame;
     let mut cursor = 0;
     while chunk_start < selected.end_frame {
-        while cursor < candidates.len() && candidates[cursor].0 - chunk_start < minimum_unit {
+        while cursor < candidates.len()
+            && candidates[cursor].0.end_frame < chunk_start.saturating_add(minimum_unit)
+        {
             cursor += 1;
         }
         let desired = chunk_start.saturating_add(target_frames);
         let mut cut = selected.end_frame;
-        let mut best_score = cut.abs_diff(desired) as f64 / target_frames as f64;
+        let mut best_score = (cut.abs_diff(desired) as f64 / target_frames as f64).powi(2);
         let mut winner = candidates.len();
-        for (index, &(midpoint, confidence)) in candidates.iter().enumerate().skip(cursor) {
-            let distance = midpoint.abs_diff(desired) as f64 / target_frames as f64;
-            if midpoint > desired && distance > best_score {
+        for (index, (range, quality)) in candidates.iter().enumerate().skip(cursor) {
+            let first = range
+                .start_frame
+                .max(chunk_start.saturating_add(minimum_unit));
+            let last = range
+                .end_frame
+                .min(selected.end_frame.saturating_sub(minimum_unit));
+            if first > last {
+                continue;
+            }
+            let point = desired.clamp(first, last);
+            let distance = point.abs_diff(desired) as f64 / target_frames as f64;
+            if point > desired && distance.powi(2) > best_score {
                 break;
             }
-            let score = distance + 0.2 * (1.0 - confidence);
-            if score < best_score || (score == best_score && midpoint < cut) {
-                cut = midpoint;
+            let score = distance.powi(2) + (1.0 - quality).powi(2);
+            if score < best_score || (score == best_score && point < cut) {
+                cut = point;
                 best_score = score;
                 winner = index;
             }

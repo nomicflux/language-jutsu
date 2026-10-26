@@ -1,12 +1,12 @@
-# Acquisition, transcription, and practice audio
+# Build the processed listening progression
 
-Use the current Language Jutsu checkout and its `--help`. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_python`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
+Use the existing Language Jutsu app, saved runtime settings and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_python`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
 
 ## Get the requested conversation
 
 For discovery, search in the requested language/dialect and topic, open the full publisher/media pages, and inspect the actual candidate recording's transcript/audio evidence. Establish responsive speaker turns, target language without English, topic, dialect, and suitable difficulty. A title or automated language label cannot establish all of these. Reject mismatches and continue the same search, preserving the request.
 
-For supplied content, preserve its recording identity and explicit bounds. If a matching conversation can be selected and the request permits selection, retain whole question/answer exchanges. When the recording conflicts with a requirement that cannot be repaired by an allowed selection, explain the concrete conflict instead of silently changing the source.
+For supplied content, preserve its recording identity and explicit bounds. If selection is permitted, retain meaningful question/answer exchanges. One recording may supply several players; several recordings may supply a lesson. Assess their combined teaching substance and keep each source identifiable. When a recording conflicts with a requirement that cannot be repaired by an allowed selection, explain the conflict instead of silently changing the source.
 
 Jutsu's `--url` is for a single supported YouTube video URL. Acquire and transcribe once while retaining the full downloaded original:
 
@@ -19,6 +19,8 @@ cargo run --quiet --manifest-path "$repo/Cargo.toml" -- \
 ```
 
 The retained original and its `.source.json` companion stay together. Use that local original for all later commands; the sidecar restores its remote provenance. Do not use a temporary download path from an earlier invocation as tomorrow's source.
+
+For a long episode with a known relevant interval, add `--start` and `--end` to that acquisition/transcription command. `--save-source` still retains the full original for later selections; transcription then processes the selected interval. Repeat acquisition only for genuinely different sources.
 
 For a public publisher/RSS/direct-media URL, resolve the actual audio link from the full page or feed, download that recording into the lesson directory, and record submitted page, final media URL, publisher identity, and download date in `sources.md`. For a supplied local file, use a retained copy or a stable original path. Do not pass a generic page or Spotify URL to the YouTube-only parser or use a preview as the full requested recording. Investigate the provider's actual public media route; an acquisition failure does not authorize content substitution.
 
@@ -33,13 +35,17 @@ cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
   --output "$lesson/transcript.txt"
 ```
 
-The text file has a structured `.json` companion: `text`, `language`, `segments` (with `words`), `source`, `backend`, `settings`, `timestamp_reference`, and `source_offset_seconds`. Segment/word `start` and `end` are already original-source seconds. Never align against the expanded practice track or add the offset a second time. Transcription preserves the spoken language; do not request translation. Whisper does not supply speaker identities, questions, or correct answers. Use source turn context and publisher labels for identities; if identities are unknown, refer to first/second speaker. [Code proof](boundaries.md) traces these interfaces.
+The text file has a structured `.json` companion: `text`, `language`, `segments` (with `words`), `source`, `backend`, `settings`, `timestamp_reference`, and `source_offset_seconds`. Segment/word `start` and `end` are already original-source seconds. Never align against the expanded practice track or add the offset a second time. Transcription preserves the spoken language; do not request translation. Whisper does not supply speaker identities, questions, or correct answers. Use source turn context and publisher labels for identities; if identities are unknown, refer to first/second speaker.
 
-Read [evidence.md](evidence.md) before converting this text into answer claims.
+Transcription output is a hypothesis. Establish the wording and meaning from the recording and its context before using it in teaching or answers.
 
-## Plan and render the complete exercise
+## Render the study passages
 
-Resolve the actual named format in `formats/`. Copy the chosen JSON to the lesson directory so tomorrow uses the same processing settings. For unspecified processing, choose a design that serves this conversational exchange and explain that choice; a tested example or a file named `shorter` is not a default. Always pass the format explicitly because omitted lookup is relative to the executable.
+For each selected conversational excerpt, give Jutsu a source, excerpt bounds, format JSON and output path. The app finds practice units, generates the play sequence, joins source spans and renders the finished study player. Use that output directly for the lesson. Render multiple excerpts as separate study files when useful; never concatenate them or manually choose practice-unit cuts. The same workflow supplies the opening passage and later practice. If the user explicitly requests no processing, use their requested unprocessed audio instead.
+
+Resolve any explicitly named format in `formats/`. Otherwise, translate the learner's level and preferences into suitable chunk sizes, repetitions, speeds and chaining; clarify unclear learning preferences in natural language before choosing their settings. Read the actual presets and select or adapt one to serve the lesson; a tested example or a file named `shorter` is not a default. Save the chosen JSON in the lesson directory so tomorrow uses the same processing settings. Always pass the format explicitly because omitted lookup is relative to the executable.
+
+`chunking.chunk_target_size_seconds` guides the app's automatic segmentation, while `--start`/`--end` select the conversational excerpt. The playback section configures the app's repetitions, speeds, joins and gaps. `joining.group_size: 1` produces no multi-unit joins; use a suitable larger group size when configuring joined practice. Do not defeat segmentation with an oversized target and manually supplied phrase windows, or assemble a file's internal play order yourself. Run the sequence command first and use its units, plays and estimated duration to choose a suitable format before running the render command. Both commands use the same source, bounds and chosen format, with distinct output names.
 
 ```sh
 cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
@@ -52,19 +58,10 @@ cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
   --metadata-output "$lesson/practice.json"
 ```
 
-Inspect the ordered plays, joins, and estimate in the sequence document, then read `output.pcm_duration_seconds` from render metadata for the full listening activity. `sequence.estimated_duration_seconds` is a separate estimate, not an actual playback checkpoint. Use a new output filename when revising; Jutsu deliberately does not overwrite outputs.
+Inspect `plays` and `estimated_seconds` in the sequence-only report, then read `output.pcm_duration_seconds` from render metadata for the full listening activity. Render metadata stores its estimate separately as `sequence.estimated_duration_seconds`; it is not an actual playback checkpoint. Use a new output filename when revising; Jutsu deliberately does not overwrite outputs.
 
-The preparation review considers the entire main track and the concrete learning interaction following it. Reject a thirty-minute track; do not present it with a skip/early-stop escape. If the user left the interval or processing design open, revise those choices and render again. Preserve explicit user choices and ask only when their conflict prevents a workable result. Do not turn a successful example's duration into a universal limit.
+Build and review the teaching around these finished app outputs. Read the app's sequence report to understand its cuts and joins, and measure total planned listening as well as each player's length. Allow time for responses and explanations. If the practice needs adjustment, revise the format JSON or conversational excerpt and rerun Jutsu. Preserve explicit user choices and clarify unresolved learning preferences or conflicts before making the affected choices.
 
-## Prepare a contextual repair
+## Adapt the processed practice
 
-Take bounds from the evidence on the original recording, including the prompt, answer, and relevant preceding referent. Render through Jutsu using the bundled one-play format:
-
-```sh
-cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
-  --language "$language" --start "$repair_start" --end "$repair_end" \
-  --format "$skill/assets/reference.json" \
-  --output "$lesson/repair.wav" --metadata-output "$lesson/repair.json"
-```
-
-This format plays the continuous selected source once at its original speed with no added gaps. It is a diagnostic replay after the complete main task, not a replacement for an unusable main task. Ask a narrower, source-grounded question immediately before this player; reconnect the learner's answer to the original conversation afterward.
+For focused practice, select the relevant exchange on the original recording, retaining the prompt, response and referents. Configure its practice in the format JSON, rerun the same sequence/render commands under distinct output names, and inspect the app's output before presenting it. Jutsu still performs all segmentation, sequencing and joining. If supported settings cannot produce suitable practice, report the specific limitation; do not implement a substitute audio pipeline.

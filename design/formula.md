@@ -29,18 +29,23 @@ All displayed values come from the JSON. The default factors, sequencing choice,
 
 ## Build the spans before ordering the plays
 
-A, B, and C denote consecutive pause-based audio units. Partition the source-ordered units into local groups of at most `group_size`. Finish a group's entire sequence before advancing to the next group. The last group can be shorter.
+`Sequence::build(unit_count, formula)` expands the playback formula into an owned list of plays before audio construction. Each play stores its unit range, speed, speed-array position, repetition position, group index, and following gap. Rendering consumes this list and the source units; reports and duration estimates use the same entries. The sequence builder needs no audio or source-frame boundaries.
 
-The proposed forward build emits the first unit, then each next unit followed by the growing prefix:
+A, B, and C denote consecutive pause-based audio units. Partition the source-ordered units into local playback groups of at most `group_size`. Finish a group's entire sequence before advancing to the next group. The last group can be shorter. Joins slide across group boundaries: `group_size` limits the number of consecutive source units in each join.
 
-| Group | Ordered spans |
-| --- | --- |
-| A | A |
-| A, B | A, B, A+B |
-| A, B, C | A, B, A+B, C, A+B+C |
-| A, B, C, D | A, B, A+B, C, A+B+C, D, A+B+C+D |
+The forward build emits the first unit, then each next unit followed by a join of up to `group_size` units ending at that unit:
 
-The one-unit case emits A once, without an identical extra “join.” `group_size: 1` supplies individual-unit practice. Larger values increase the extent of the cumulative build. Grouping and this forward pattern are design proposals, rather than user-selected defaults.
+| Source units | Join limit | Ordered spans |
+| --- | --- | --- |
+| A | Any | A |
+| A, B | 2 or more | A, B, A+B |
+| A, B, C | 2 | A, B, A+B, C, B+C |
+| A, B, C | 3 or more | A, B, A+B, C, A+B+C |
+| A, B, C, D | 2 | A, B, A+B, C, B+C, D, C+D |
+| A, B, C, D | 3 | A, B, A+B, C, A+B+C, D, B+C+D |
+| A, B, C, D | 4 or more | A, B, A+B, C, A+B+C, D, A+B+C+D |
+
+The one-unit case emits A once, without an identical extra “join.” `group_size: 1` supplies individual-unit practice. Larger values increase the maximum join length.
 
 A+B means the original source interval from A's beginning to B's end. It includes their original intervening pause. It excludes added practice gaps. It is rendered as one continuous span, not assembled from separately slowed practice clips.
 

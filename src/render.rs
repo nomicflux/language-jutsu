@@ -8,7 +8,7 @@ use std::{
 
 use tempfile::NamedTempFile;
 
-use crate::{formula::Formula, media::DecodedAudio, sequence::Plan};
+use crate::{media::DecodedAudio, segmentation::FrameRange, sequence::Sequence};
 
 // Keep every stage inside atempo's blending range; their product is the requested speed.
 fn tempo_filter(mut factor: f64) -> String {
@@ -62,8 +62,8 @@ fn run(command: &mut Command, stage: &str) -> Result<(), Box<dyn Error>> {
 
 pub(crate) fn publish(
     source: &DecodedAudio,
-    plan: &Plan<'_>,
-    formula: &Formula,
+    units: &[FrameRange],
+    sequence: &Sequence,
     output: &Path,
 ) -> Result<u64, Box<dyn Error>> {
     if output.try_exists()? {
@@ -86,20 +86,21 @@ pub(crate) fn publish(
         return Err("MP3 cannot preserve this source's sample rate/channel count; use .wav".into());
     }
     let frame_bytes = u64::from(info.channels.get()) * 4;
-    let gap_frames =
-        u64::try_from((formula.gap().as_nanos() * u128::from(rate)).div_ceil(1_000_000_000))
-            .map_err(|_| "practice gap exceeds the frame index range")?;
-    let gap_bytes = gap_frames
-        .checked_mul(frame_bytes)
-        .ok_or("practice gap byte count overflow")?;
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let encoded = NamedTempFile::new_in(parent)?;
     let mut assembled = NamedTempFile::new()?;
-    for (index, play) in plan.plays().enumerate() {
-        let mut input = source.open_range_pcm(&play.source_range)?;
+    for (index, play) in sequence.plays().iter().enumerate() {
+        let gap_frames = u64::try_from(
+            (play.following_gap.as_nanos() * u128::from(rate)).div_ceil(1_000_000_000),
+        )
+        .map_err(|_| "practice gap exceeds the frame index range")?;
+        let gap_bytes = gap_frames
+            .checked_mul(frame_bytes)
+            .ok_or("practice gap byte count overflow")?;
+        let mut input = source.open_range_pcm(&play.source_range(units))?;
         if play.speed.factor() == 1.0 {
             io::copy(&mut input, assembled.as_file_mut())?;
         } else {
@@ -133,9 +134,7 @@ pub(crate) fn publish(
             }
             io::copy(&mut File::open(stretched.path())?, assembled.as_file_mut())?;
         }
-        if index + 1 < plan.play_count && gap_bytes > 0 {
-            io::copy(&mut io::repeat(0).take(gap_bytes), assembled.as_file_mut())?;
-        }
+        io::copy(&mut io::repeat(0).take(gap_bytes), assembled.as_file_mut())?;
     }
     assembled.flush()?;
     let mut command = pcm_input(source, assembled.path());

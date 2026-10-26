@@ -18,7 +18,7 @@ impl fmt::Display for Sequencing {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, Serialize)]
 #[serde(transparent)]
 pub(crate) struct Speed(f64);
 

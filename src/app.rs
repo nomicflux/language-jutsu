@@ -82,9 +82,10 @@ pub(crate) fn run(request: Request) -> Result<(), Box<dyn Error>> {
                 println!("Segmentation report saved: {}", request.output.display());
                 Ok(())
             } else {
-                let plan = sequence::Plan::build(&analysis, &format, decoded.info())?;
-                println!("Practice groups: {}", plan.group_count);
-                println!("Planned plays: {}", plan.play_count);
+                let sequence = sequence::Sequence::build(analysis.units.len(), formula)?;
+                let plan = sequence::Plan::build(&analysis, &format, decoded.info(), &sequence)?;
+                println!("Practice groups: {}", sequence.group_count);
+                println!("Planned plays: {}", sequence.plays().len());
                 println!(
                     "Estimated listening duration: {:.3} seconds",
                     plan.estimated_seconds
@@ -94,7 +95,8 @@ pub(crate) fn run(request: Request) -> Result<(), Box<dyn Error>> {
                     println!("Sequence report saved: {}", request.output.display());
                     Ok(())
                 } else {
-                    let frames = render::publish(&decoded, &plan, formula, &request.output)?;
+                    let frames =
+                        render::publish(&decoded, &analysis.units, &sequence, &request.output)?;
                     if let Some(path) = &request.metadata_output {
                         metadata::publish_render(
                             decoded.info(),

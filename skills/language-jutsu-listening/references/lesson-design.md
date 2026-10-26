@@ -1,0 +1,43 @@
+# Research basis for interactive listening lessons
+
+The research is already summarized here for use in lesson preparation. Apply the findings, limitations and teaching guidance below; do not reopen the papers or repeat the research when writing a lesson. Citations record the basis for this guidance, not additional tasks. These sources do not establish universal clip lengths, chunk sizes, repetition counts or a tested LLM tutor.
+
+## Calibrate the listening task
+
+The [CEFR Companion Volume](https://rm.coe.int/common-european-framework-of-reference-for-languages-learning-teaching/16809ea0d4), pp. 38–40 and 48–53, describes uneven proficiency profiles and distinguishes oral comprehension, following other people's conversations, recordings and audiovisual comprehension. Familiarity with the language variety and topic, delivery and available context affect the descriptors. Following other people's conversation can be harder than understanding someone addressing the learner because of shared assumptions and the lack of accommodation. The [official JLPT level descriptions](https://www.jlpt.jp/e/reference/pdf/guide2011_e.pdf) likewise distinguish reading and listening capabilities.
+
+**Application to this skill:** use the supplied standard's relevant descriptors, or a provisional calibration from the learner's natural-language description. Do not assume that reading, listening and responding are equally developed, or that an interest in specialized content establishes advanced proficiency. Use the requested source and learner familiarity to decide what context and language support to supply.
+
+## Guided interpretation across repeated listening
+
+Vandergrift and Tafaghodtari (2010), *Teaching L2 Learners How to Listen Does Make a Difference*, studied 106 high-beginner/low-intermediate French learners over 13 weeks. Both groups heard the same texts three times; the intervention added preparation, comparison of interpretations, attention to unresolved meaning and reflection. The authors report stronger outcomes for guided listening, particularly for less-skilled listeners. Their discussion warns that repeating the same instructional routine became tedious. Text-assisted sound/word comparison is discussed as an extension, not a component whose effect this experiment isolated. Classroom peer interaction and semester-long results cannot be assumed to transfer unchanged to a single LLM session. [Article DOI](https://doi.org/10.1111/j.1467-9922.2009.00559.x); [full article copy](https://studylib.net/doc/25218749/vandergrift-et-al-2010-language-learning), especially pp. 475, 478–479 and 487–491.
+
+**Application to this skill:** use a conversation worth understanding across turns to design the processed listening progression. Let the learner's current interpretation guide attention within later processed passages. Connect local discoveries back to the developing whole; vary the interaction with the content rather than applying a stock quiz repeatedly.
+
+## Teach the speech the learner cannot yet recognize
+
+Siegel and Siegel (2015), *Getting to the bottom of L2 listening instruction*, investigated lower-intermediate university English classes in Japan. The treatment combined ordinary listening with activities addressing spoken-word recognition and segmentation; final analyses included 18 treatment and 26 comparison learners. Their activities included short transcription, connected-speech noticing and phrase reconstruction. They report gains and positive learner perceptions, but the small sample, different teachers and bundled activities limit causal and activity-specific conclusions. They explicitly caution against decontextualizing language or promoting word-by-word processing. [Complete article](https://files.eric.ed.gov/fulltext/EJ1135116.pdf), particularly pp. 649–650 and 657–658.
+
+**Application to this skill:** prepare language support alongside Jutsu's processed passages so work on smaller speech units connects to understanding their joined context. When difficulty emerges, explain the useful phrase and adapt that processed practice, then elicit meaning or an appropriate response. Do not make answer repetition stand in for sound recognition.
+
+## Connect written support to audible speech
+
+Winke, Gass and Sydorenko (2010), *The effects of captioning videos used for foreign language listening activities*, studied 150 university learners of Arabic, Chinese, Russian and Spanish using dubbed documentary videos. Captioned-versus-uncaptioned comparisons were confined to small Spanish groups and favored captions for vocabulary recognition and comprehension. Across languages, captions on the first viewing improved aural vocabulary recognition relative to captions on the second; ordering did not significantly affect overall comprehension. Language-specific ordering trends were not statistically significant. These findings do not establish one universal order for written support or prove effects for a transcript alongside processed conversation audio. [Complete article](https://scholarspace.manoa.hawaii.edu/bitstreams/0bb15976-674b-4006-8653-52b83b8d4654/download).
+
+**Application to this skill:** establish whether the learner can use the written support and plan how it helps them recognize and understand the speech. Adapt its use to the task and actual difficulty; do not automatically withhold support for a quiz or assume that understanding while reading establishes independent listening. Applying caption findings to Jutsu's audio lessons is a teaching inference, not a tested result.
+
+## Design the lesson through processed listening
+
+Select relevant scenes and passages for the requested learning task and configure Jutsu's format JSON for the learner. Adopt the app's pedagogy of segmentation, repetition, speed changes and progressive joining. Apply the findings above through vocabulary, grammar, explanations and response opportunities around the finished audio. Revise the JSON or selected passage and rerun Jutsu when teaching needs different practice; preserve the app's construction of the resulting sequence.
+
+One source can yield several separate Jutsu players, and several sources can support a connected learning task. Teach through the app's joined progression, with space between players for explanation and learner responses. Connect the learning between players through teaching; never join the files yourself. A difficult expression, a later reply and the learner's own response can connect this learning; they are not a fixed activity menu.
+
+Judge pacing over the actual experience of the processed audio and teaching together: listening, reading notes, trying a response, receiving help and continuing. Review whether this progression helps the intended learner understand the speech and its conversational meaning, then repair it before presentation. Keep directions accessible, permit uncertainty and distinguish supported understanding from independent recognition. Rehearsal does not establish human usability; test in a real session and revise against the learner's experience. User acceptance remains pending until they give it.
+
+## Vocabulary, grammar and other learning materials
+
+Provide vocabulary and grammar notes for the selected excerpts, omitting only notes the user declines. Their level, scope and organisation follow the actual prompt and clarified learning preferences. Use the same source-based preparation and learner-use review for other lesson-specific requests.
+
+Vocabulary notes cover meaning-bearing words, expressions and spoken forms that need support at the agreed level in the selected excerpts. Give their meanings in the actual exchange; isolated familiar words or dictionary senses unrelated to the scene do not meet that need. Grammar notes explain useful constructions occurring in the source: their relevant form, what they mean and how they function in that exchange. A grammatical label alone does not explain a construction. Neither a fixed number of entries nor exhaustive annotation establishes useful coverage.
+
+Review these materials by following the entire selected exchange with only the supplied notes and the knowledge reasonably expected at the learner's stated level. Repair consequential unexplained language, omissions, inaccuracies and explanations that are too elementary or too difficult for the request. Check that the notes support the requested learning work and remain usable alongside the audio and activities; then apply the main skill's complete-lesson review.

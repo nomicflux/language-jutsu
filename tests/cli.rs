@@ -220,6 +220,58 @@ fn accepts_requested_language_and_dialect_and_rejects_missing_input() {
 }
 
 #[test]
+fn named_languages_render_and_save_canonical_codes_without_restricting_other_labels() {
+    let mut fixture = Fixture::new();
+    fixture.output = fixture.directory.join("study.wav");
+    write_wav(&fixture.input, 1000, 1, &[10000; 2000]);
+    set_recipe(&fixture, &[1.0], "joining-then-timing", 1, 0, 1);
+    let metadata_path = fixture.directory.join("study.json");
+    for (label, code) in [
+        ("French", "fr"),
+        ("ITALIAN", "it"),
+        ("German", "de"),
+        (" Mandarin ", "zh"),
+        ("Cantonese", "yue"),
+        ("Korean", "ko"),
+        ("Farsi", "fa"),
+        ("Hindi", "hi"),
+        ("Kiswahili", "sw"),
+        ("isiZulu", "zu"),
+        ("isiXhosa", "xh"),
+        ("Sesotho", "st"),
+        ("Chinese", "zh"),
+        ("Persian", "fa"),
+        ("Swahili", "sw"),
+        ("Zulu", "zu"),
+        ("Xhosa", "xh"),
+        ("YUE", "yue"),
+        ("custom-language", "custom-language"),
+    ] {
+        let result = fixture.run(&[
+            "--language",
+            label,
+            "--metadata-output",
+            metadata_path.to_str().unwrap(),
+        ]);
+        assert!(
+            result.status.success(),
+            "{label}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&fs::read(&metadata_path).unwrap()).unwrap();
+        assert_eq!(metadata["source"]["language"]["code"], code, "{label}");
+        assert_eq!(
+            read_audio(&fixture.output),
+            vec![10000.0 / 32768.0; 2000],
+            "{label}"
+        );
+        fs::remove_file(&fixture.output).unwrap();
+        fs::remove_file(&metadata_path).unwrap();
+    }
+}
+
+#[test]
 fn default_format_is_an_external_required_file() {
     let fixture = Fixture::new();
     let binary = fixture.installed_binary();
@@ -411,7 +463,7 @@ fn decoder_discards_partial_audio_when_decoding_fails() {
 }
 
 #[test]
-fn segmentation_uses_pause_midpoints_and_preserves_all_frames() {
+fn segmentation_uses_safe_pause_interiors_and_preserves_all_frames() {
     let fixture = Fixture::new();
     set_chunk_target(&fixture, 2.0);
     let mut samples = vec![10000; 2000];
@@ -431,10 +483,10 @@ fn segmentation_uses_pause_midpoints_and_preserves_all_frames() {
     let units = report["units"].as_array().unwrap();
     assert_eq!(units.len(), 3);
     assert_eq!(units[0]["start_frame"], 0);
-    assert_eq!(units[0]["end_frame"], 2200);
-    assert_eq!(units[1]["start_frame"], 2200);
-    assert_eq!(units[1]["end_frame"], 4600);
-    assert_eq!(units[2]["start_frame"], 4600);
+    assert_eq!(units[0]["end_frame"], 2030);
+    assert_eq!(units[1]["start_frame"], 2030);
+    assert_eq!(units[1]["end_frame"], 4430);
+    assert_eq!(units[2]["start_frame"], 4430);
     assert_eq!(units[2]["end_frame"], 6800);
     assert_eq!(report["source"]["frame_count"], 6800);
     assert_eq!(report["source"]["language"]["dialect"], "shami");
@@ -462,7 +514,7 @@ fn segmentation_does_not_cancel_opposite_stereo_channels_or_cut_edge_silence() {
         serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
     assert_eq!(report["units"].as_array().unwrap().len(), 2);
     assert_eq!(report["units"][0]["start_frame"], 0);
-    assert_eq!(report["units"][0]["end_frame"], 2600);
+    assert_eq!(report["units"][0]["end_frame"], 2430);
     assert_eq!(report["units"][1]["end_frame"], 5200);
     assert_eq!(report["quiet_intervals"].as_array().unwrap().len(), 3);
 }
@@ -634,7 +686,7 @@ fn sequence_modes_match_the_two_requested_orders_and_keep_joined_pauses() {
 }
 
 #[test]
-fn sequence_preserves_duplicate_speeds_repeats_and_singleton_tail() {
+fn sequence_preserves_duplicate_speeds_and_repeats_with_a_joined_tail() {
     let fixture = Fixture::new();
     set_chunk_target(&fixture, 2.0);
     let mut samples = vec![10000; 2000];
@@ -658,8 +710,8 @@ fn sequence_preserves_duplicate_speeds_repeats_and_singleton_tail() {
             serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
         let rows = report["plays"].as_array().unwrap();
         assert_eq!(report["group_count"], 2);
-        assert_eq!(report["play_count"], 24);
-        assert_eq!(rows.len(), 24);
+        assert_eq!(report["play_count"], 30);
+        assert_eq!(rows.len(), 30);
         for pair in rows.chunks_exact(2) {
             assert_eq!(
                 pair[0]["play"]["source_range"],
@@ -675,12 +727,36 @@ fn sequence_preserves_duplicate_speeds_repeats_and_singleton_tail() {
         }
         let tail: Vec<_> = rows[18..]
             .iter()
-            .map(|row| row["play"]["speed"].as_f64().unwrap())
+            .step_by(2)
+            .map(|row| {
+                (
+                    row["play"]["unit_start"].as_u64().unwrap(),
+                    row["play"]["speed"].as_f64().unwrap(),
+                )
+            })
             .collect();
-        assert_eq!(tail, vec![1.1, 1.1, 0.75, 0.75, 0.75, 0.75]);
+        let expected = if mode == "timing-then-joining" {
+            vec![
+                (2, 1.1),
+                (1, 1.1),
+                (2, 0.75),
+                (1, 0.75),
+                (2, 0.75),
+                (1, 0.75),
+            ]
+        } else {
+            vec![
+                (2, 1.1),
+                (2, 0.75),
+                (2, 0.75),
+                (1, 1.1),
+                (1, 0.75),
+                (1, 0.75),
+            ]
+        };
+        assert_eq!(tail, expected);
         for row in &rows[18..] {
             assert_eq!(row["play"]["group_index"], 1);
-            assert_eq!(row["play"]["unit_start"], 2);
             assert_eq!(row["play"]["unit_end_exclusive"], 3);
         }
         let last = rows.last().unwrap();
@@ -696,45 +772,93 @@ fn sequence_preserves_duplicate_speeds_repeats_and_singleton_tail() {
 }
 
 #[test]
-fn sequence_builds_three_piece_prefixes_without_repeating_identical_singletons() {
-    let fixture = Fixture::new();
-    set_chunk_target(&fixture, 2.0);
-    let mut samples = vec![10000; 2000];
-    samples.extend(vec![0; 400]);
-    samples.extend(vec![10000; 2000]);
-    samples.extend(vec![0; 400]);
-    samples.extend(vec![10000; 2000]);
-    write_wav(&fixture.input, 1000, 1, &samples);
-    let mut formula: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.format).unwrap()).unwrap();
-    formula["playback"]["segments"] = serde_json::json!([1.0]);
-    fs::write(&fixture.format, serde_json::to_vec(&formula).unwrap()).unwrap();
-    let output = fixture.run(&["--language", "es", "--sequence-only"]);
-    assert!(output.status.success());
-    let report: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
-    let membership: Vec<_> = report["plays"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row["play"]["unit_start"].as_u64().unwrap(),
-                row["play"]["unit_end_exclusive"].as_u64().unwrap(),
-            )
-        })
-        .collect();
-    assert_eq!(membership, vec![(0, 1), (1, 2), (0, 2), (2, 3), (0, 3)]);
-    assert!((report["estimated_seconds"].as_f64().unwrap() - 20.2).abs() < 1e-9);
-    fs::remove_file(&fixture.output).unwrap();
-    formula["playback"]["joining"]["group_size"] = 1.into();
-    fs::write(&fixture.format, serde_json::to_vec(&formula).unwrap()).unwrap();
-    let output = fixture.run(&["--language", "es", "--sequence-only"]);
-    assert!(output.status.success());
-    let report: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
-    assert_eq!(report["play_count"], 3);
-    assert_eq!(report["group_count"], 3);
+fn sequence_and_audio_use_sliding_joins_up_to_the_limit() {
+    for (unit_count, limit, expected) in [
+        (3, 1, vec![(0, 1), (1, 2), (2, 3)]),
+        (3, 2, vec![(0, 1), (1, 2), (0, 2), (2, 3), (1, 3)]),
+        (3, 3, vec![(0, 1), (1, 2), (0, 2), (2, 3), (0, 3)]),
+        (3, 4, vec![(0, 1), (1, 2), (0, 2), (2, 3), (0, 3)]),
+        (
+            4,
+            2,
+            vec![(0, 1), (1, 2), (0, 2), (2, 3), (1, 3), (3, 4), (2, 4)],
+        ),
+        (
+            4,
+            3,
+            vec![(0, 1), (1, 2), (0, 2), (2, 3), (0, 3), (3, 4), (1, 4)],
+        ),
+    ] {
+        let mut fixture = Fixture::new();
+        fixture.output = fixture.directory.join("practice.wav");
+        set_chunk_target(&fixture, 2.0);
+        let mut samples = Vec::new();
+        for index in 0..unit_count {
+            if index > 0 {
+                samples.extend(vec![0; 400]);
+            }
+            samples.extend(vec![10000 + index * 2000; 2000]);
+        }
+        write_wav(&fixture.input, 1000, 1, &samples);
+        let boundaries = if unit_count == 3 {
+            vec![0, 2030, 4430, 6800]
+        } else {
+            vec![0, 2030, 4430, 6830, 9200]
+        };
+        let mut expected_audio = Vec::new();
+        for (index, &(first, end)) in expected.iter().enumerate() {
+            if index > 0 {
+                expected_audio.extend(vec![0.0; 500]);
+            }
+            expected_audio.extend(
+                samples[boundaries[first]..boundaries[end]]
+                    .iter()
+                    .map(|&sample| f32::from(sample) / 32768.0),
+            );
+        }
+        for mode in ["timing-then-joining", "joining-then-timing"] {
+            set_recipe(&fixture, &[1.0], mode, 1, 500, limit);
+            let output = fixture.run(&["--language", "es", "--sequence-only"]);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let report: serde_json::Value =
+                serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
+            let rows = report["plays"].as_array().unwrap();
+            let membership: Vec<_> = rows
+                .iter()
+                .map(|row| {
+                    (
+                        row["play"]["unit_start"].as_u64().unwrap() as usize,
+                        row["play"]["unit_end_exclusive"].as_u64().unwrap() as usize,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                membership, expected,
+                "{unit_count} units, limit {limit}, {mode}"
+            );
+            assert_eq!(report["play_count"], expected.len());
+            assert_eq!(rows.last().unwrap()["following_gap_ms"], 0);
+            assert!(
+                (report["estimated_seconds"].as_f64().unwrap()
+                    - expected_audio.len() as f64 / 1000.0)
+                    .abs()
+                    < 1e-9
+            );
+            fs::remove_file(&fixture.output).unwrap();
+            let output = fixture.run(&["--language", "es"]);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(read_audio(&fixture.output), expected_audio);
+            fs::remove_file(&fixture.output).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -926,8 +1050,8 @@ fn window_applies_before_segmentation_and_sequence_keeps_source_offsets() {
         let units = segmentation["units"].as_array().unwrap();
         assert_eq!(units.len(), 2);
         assert_eq!(units[0]["start_frame"], 1000);
-        assert_eq!(units[0]["end_frame"], 2200);
-        assert_eq!(units[1]["start_frame"], 2200);
+        assert_eq!(units[0]["end_frame"], 2370);
+        assert_eq!(units[1]["start_frame"], 2370);
         assert_eq!(units[1]["end_frame"], 5000);
         if mode == "--sequence-only" {
             let rows = report["plays"].as_array().unwrap();
@@ -1182,7 +1306,7 @@ fn rendering_keeps_exact_joins_repeats_group_gaps_and_selected_frames_at_normal_
 fn altered_speed_audio_follows_both_sequence_orders_and_retains_joined_pauses() {
     for order in ["timing-then-joining", "joining-then-timing"] {
         let mut fixture = Fixture::new();
-        set_chunk_target(&fixture, 2.0);
+        set_chunk_target(&fixture, 2.2);
         fixture.output = fixture.directory.join("practice.wav");
         let rate = 16000;
         let mut samples = tone(rate, 440.0, 32000);
@@ -1568,10 +1692,10 @@ fn chunk_target_defaults_to_six_and_cli_selects_two_or_ten_with_identical_pauses
 }
 
 #[test]
-fn target_uses_nearest_pause_with_earlier_ties_and_preserves_a_short_tail() {
+fn target_uses_nearest_safe_point_and_preserves_a_short_tail() {
     let fixture = Fixture::new();
-    // The first target lies between pauses at 1.8 and 2.4 seconds: choose 1.8.
-    // The next target is equidistant from 3.6 and 4.0: choose 3.6.
+    // Approach the first target from inside the earlier pause. The next target
+    // lies inside the pause around 4.0; neither cut needs to use a midpoint.
     let mut samples = vec![10000; 6300];
     for center in [1800, 2400, 3600, 4000, 6000] {
         let radius = if center == 3600 || center == 4000 {
@@ -1607,7 +1731,7 @@ fn target_uses_nearest_pause_with_earlier_ties_and_preserves_a_short_tail() {
             )
         })
         .collect();
-    assert_eq!(ranges, vec![(0, 1800), (1800, 3600), (3600, 6300)]);
+    assert_eq!(ranges, vec![(0, 1970), (1970, 3970), (3970, 6300)]);
 }
 
 #[test]
@@ -1866,7 +1990,7 @@ fn three_second_target_can_use_a_brief_speaker_pause_before_a_later_sentence_pau
     let units = report["units"].as_array().unwrap();
     assert_eq!(units[0]["start_frame"], 0);
     assert_eq!(units[0]["end_frame"], 3000);
-    assert_eq!(units[1]["end_frame"], 6550);
+    assert_eq!(units[1]["end_frame"], 6450);
     assert_eq!(units.last().unwrap()["end_frame"], 8000);
     assert!(
         units
@@ -1951,7 +2075,109 @@ fn confidence_favors_a_nearby_clear_pause_but_keeps_target_over_a_distant_long_p
     assert!(result.status.success());
     let report: serde_json::Value =
         serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
-    assert_eq!(report["units"][0]["end_frame"], 3200);
+    assert_eq!(report["units"][0]["end_frame"], 3130);
+}
+
+#[test]
+fn target_dips_do_not_displace_sustained_pauses_or_force_cuts_without_them() {
+    let fixture = Fixture::new();
+    set_chunk_target(&fixture, 2.0);
+    for width in [10, 20, 40] {
+        let mut samples = vec![10000; 8000];
+        samples[2000 - width / 2..2000 + width / 2].fill(0);
+        samples[2430..3730].fill(500);
+        write_wav(&fixture.input, 1000, 1, &samples);
+        let result = fixture.run(&["--language", "ar", "--segment-only"]);
+        assert!(result.status.success());
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
+        // The sustained pause starts 430 ms beyond the target. Cut safely near
+        // its beginning, not in the brief dip or at the long pause's midpoint.
+        assert_eq!(report["units"][0]["end_frame"], 2460, "dip {width} ms");
+        fs::remove_file(&fixture.output).unwrap();
+    }
+
+    let mut samples = vec![10000; 8000];
+    for (index, center) in (500..8000).step_by(500).enumerate() {
+        let width = [10, 20, 40][index % 3];
+        samples[center - width / 2..center + width / 2].fill(0);
+    }
+    write_wav(&fixture.input, 1000, 1, &samples);
+    let result = fixture.run(&["--language", "ar", "--segment-only"]);
+    assert!(result.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
+    assert_eq!(report["units"].as_array().unwrap().len(), 1);
+    assert_eq!(report["units"][0]["start_frame"], 0);
+    assert_eq!(report["units"][0]["end_frame"], 8000);
+}
+
+#[test]
+fn pause_quality_and_target_distance_can_each_decide_the_cut() {
+    let fixture = Fixture::new();
+    set_chunk_target(&fixture, 3.0);
+    for (background, farther_center, expected) in [(6000, 3400, 3330), (500, 3900, 3000)] {
+        let mut samples = vec![10000; 8000];
+        samples[2920..3080].fill(background);
+        samples[farther_center - 100..farther_center + 100].fill(0);
+        write_wav(&fixture.input, 1000, 1, &samples);
+        let result = fixture.run(&["--language", "es", "--segment-only"]);
+        assert!(result.status.success());
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
+        // Prefer a clearer nearby pause over a weak one on target, but retain
+        // an already good on-target pause instead of chasing greater silence.
+        assert_eq!(report["units"][0]["end_frame"], expected);
+        fs::remove_file(&fixture.output).unwrap();
+    }
+}
+
+#[test]
+fn pause_persistence_adapts_to_local_gap_durations() {
+    let fixture = Fixture::new();
+    set_chunk_target(&fixture, 3.0);
+    let mut samples = vec![10000; 50000];
+    for center in [1000, 5000, 7000, 31000, 35000, 37000] {
+        samples[center - 10..center + 10].fill(0);
+    }
+    for center in [3000, 9000, 11000, 33000] {
+        samples[center - 30..center + 30].fill(0);
+    }
+    for center in [34500, 38000, 41000] {
+        samples[center - 300..center + 300].fill(0);
+    }
+    write_wav(&fixture.input, 1000, 1, &samples);
+    for (start, end, expected) in [("0", "20", 3000), ("30", "50", 34230)] {
+        let result = fixture.run(&[
+            "--language",
+            "es",
+            "--start",
+            start,
+            "--end",
+            end,
+            "--segment-only",
+        ]);
+        assert!(result.status.success());
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
+        assert_eq!(report["units"][0]["end_frame"], expected);
+        fs::remove_file(&fixture.output).unwrap();
+    }
+}
+
+#[test]
+fn equally_good_and_equally_distant_safe_cuts_choose_the_earlier_pause() {
+    let fixture = Fixture::new();
+    set_chunk_target(&fixture, 2.0);
+    let mut samples = vec![10000; 5000];
+    samples[1700..1900].fill(0);
+    samples[2100..2300].fill(0);
+    write_wav(&fixture.input, 1000, 1, &samples);
+    let result = fixture.run(&["--language", "es", "--segment-only"]);
+    assert!(result.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(&fixture.output).unwrap()).unwrap();
+    assert_eq!(report["units"][0]["end_frame"], 1870);
 }
 
 #[test]

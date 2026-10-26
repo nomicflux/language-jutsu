@@ -23,12 +23,17 @@ impl Fixture {
     }
 
     fn run(&self) -> std::process::Output {
+        self.run_language("ja", "ja")
+    }
+
+    fn run_language(&self, language: &str, expected_code: &str) -> std::process::Output {
         // There is no format file or --format: transcription is standalone.
         Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
+            .env("EXPECTED_LANGUAGE", expected_code)
             .arg(self.dir.path().join("input.wav"))
             .args([
                 "--language",
-                "ja",
+                language,
                 "--transcribe",
                 "--start",
                 "0.10001",
@@ -48,6 +53,36 @@ impl Fixture {
     fn assert_no_outputs(&self) {
         assert!(!self.dir.path().join("transcript.txt").exists());
         assert!(!self.dir.path().join("transcript.txt.json").exists());
+    }
+}
+
+#[test]
+fn language_names_reach_whisper_as_codes_and_round_trip_in_metadata() {
+    for (name, code) in [
+        ("french", "fr"),
+        ("italian", "it"),
+        ("german", "de"),
+        ("mandarin", "zh"),
+        ("cantonese", "yue"),
+        ("korean", "ko"),
+        ("farsi", "fa"),
+        ("hindi", "hi"),
+        ("kiswahili", "sw"),
+    ] {
+        let fixture = Fixture::new("ok");
+        let result = fixture.run_language(name, code);
+        assert!(
+            result.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let json: Value = serde_json::from_slice(
+            &fs::read(fixture.dir.path().join("transcript.txt.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(json["source"]["language"]["code"], code);
+        assert_eq!(json["settings"]["language"], code);
+        assert_eq!(json["language"], code);
     }
 }
 

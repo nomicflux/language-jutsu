@@ -10,10 +10,11 @@ import types
 
 
 def fake_transcribe(audio_path, **kwargs):
+    language = os.environ.get("EXPECTED_LANGUAGE", "ja")
     assert kwargs == {
         "path_or_hf_repo": "test/model",
         "verbose": None,
-        "language": "ja",
+        "language": language,
         "task": "transcribe",
         "word_timestamps": True,
         "temperature": 0.0,
@@ -33,7 +34,7 @@ def fake_transcribe(audio_path, **kwargs):
         raise RuntimeError("test model failed")
     return {
         "text": " お茶にします。",
-        "language": "es" if MODE == "wrong_language" else "ja",
+        "language": "es" if MODE == "wrong_language" else language,
         "segments": [{
             "id": 0, "seek": 0, "start": 0.02, "end": 0.25,
             "text": " お茶にします。", "temperature": 0.0,

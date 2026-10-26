@@ -72,8 +72,8 @@ fn write_render(
         "source": source,
         "format": format.document(),
         "sequence": {
-            "group_count": plan.group_count,
-            "play_count": plan.play_count,
+            "group_count": plan.sequence.group_count,
+            "play_count": plan.sequence.plays().len(),
             "estimated_duration_seconds": plan.estimated_seconds,
         },
         "output": {

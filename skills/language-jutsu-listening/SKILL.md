@@ -1,56 +1,98 @@
 ---
 name: language-jutsu-listening
-description: "Prepare user-requested conversational audio with Language Jutsu, guide listening through evidence-grounded questions and contextual replays, and manage separate preparation and start reminders."
+description: "Prepare and conduct interactive language lessons built around Language Jutsu-processed conversation audio, with vocabulary, grammar, responsive teaching and optional lesson-based Anki decks. Also supports separate preparation and start reminders."
 ---
 
 # Language Jutsu Listening
 
-Turn the user's requested conversation into a complete listening task, then help them interpret it through their responses. Keep all learner-facing prompts, feedback, and study audio in the requested target language, without English or phrasebook content.
+Language Jutsu is an opinionated pedagogical tool. Adopt its approach: practise manageable speech units through repetition and speed changes, then follow progressively joined speech. Find scenes and passages that serve the user's learning request, create a suitable format JSON, and invoke the app. Jutsu determines the practice-unit boundaries and play order, performs the joining, and renders the finished study audio. Build the lesson around that product, using vocabulary, grammar, explanations and interaction to help the learner recognize the speech, understand the speakers and respond.
 
-## Start from the actual request
+Selecting a scene or passage, including its source bounds, is the agent's job; segmentation and joining within it belong to Jutsu. Multiple study files are often useful: render each through Jutsu and present them separately. Never manually segment the source into practice units or join/concatenate audio files, including Jutsu outputs.
 
-The user chooses language, dialect, topic, level, source, interval, and explicit processing format. Preserve those choices. Examples in documentation supply no defaults or assignments. Extract the literal request before searching or rendering; ask only for a missing fact that prevents preparation. Reuse established preferences only when they are actually applicable.
+Every learner-facing audio file belongs to that processed progression, from the opening passage through further practice and the conclusion. Only an explicit request for no processing changes this basis. Include excerpt-specific vocabulary and grammar notes at the learner's level, omitting only notes they decline.
 
-Resolve this skill directory through any symlink; the Language Jutsu repository is two directories above it. Use a durable `listening/` directory there unless the user has chosen another location. Save the repository, lesson-root, Python, and model paths in `listening/settings.md`; use absolute paths for later scheduled runs. Read the current CLI help and [preparation.md](references/preparation.md) when preparing or repairing audio.
+Resolve source wording, meaning, level, pacing and text–audio correspondence as authoring decisions before building dependent material. Do not turn an unsettled interpretation or a loosely associated clip into a finished lesson or card and defer correctness to later checking.
 
-- **New content request / preparation reply:** Prepare for the date named by the user or pending preparation reminder; an immediate practice request is for today. Save the literal request and date before working.
-- **Start / continue listening:** Read that date's `task.md`, evidence, and pending prompt. Continue the saved interaction; do not download or render already prepared material again.
-- **Reminder setup or changes:** Read [scheduling.md](references/scheduling.md). Skill installation alone does not activate schedules. Use the authorized schedule setup request to create the two separate reminders.
+The skill and its references contain the prepared research results, teaching guidance and app usage instructions. Apply the relevant guidance to produce the requested lesson and materials; do not repeat the research or follow citations into new assignments. Use the existing app and documented commands. Write the lesson content, format JSON and card manifest, not new applications or app-level scripts. Lesson preparation does not include implementation analysis, code-proof documents or tests of the tools themselves.
 
-## Prepare a usable complete task
+## Understand the learning request
 
-Acquire the requested conversational recording and retain the original for tomorrow and later repairs. Find publisher text for that exact recording, and use Language Jutsu's MLX Whisper transcription for audio-derived text and source timing. Build answer evidence before writing questions. Read [evidence.md](references/evidence.md) for missing text, disagreements, or an audio-model comparison.
+The lesson matches the request's description. Use the complete prompt and active corrections, and fulfil lesson-specific requests in the actual learner-facing material. Examples and previous lessons establish no defaults. Shorter chunks means smaller individual speech units within substantive conversation; basic questioning means accessible prompts that lead through a full session.
 
-Choose a coherent conversational exchange when the request permits selecting an interval. Resolve any named format to its actual JSON; never silently replace a user's format. If processing is unspecified, choose and describe an appropriate design for this exchange. Run sequence planning and render with the same source, interval, and format. Read the measured complete duration, joins, repetitions, speeds, and gaps. A thirty-minute practice track is not a workable task. Change assistant-controlled choices and rerender when necessary; if explicit user constraints conflict, report the concrete conflict and ask which may change. Skipping, early stopping, or substituting an original-only player cannot rescue a failed practice track.
+Before selecting and rendering the lesson, settle the following from the prompt, established context and applicable defaults. Ask concise follow-ups only where missing information would materially change the lesson. These are planning decisions, not a mandatory questionnaire; the question wordings are examples.
 
-Before marking ready, use the complete exercise as the learner would: full main track, opening prompt, plausible correct/partial/incorrect/help responses, and complete contextual repairs. Check that the question is answerable from the selected conversation and that the response form is achievable. A successful render is not enough.
+1. **Level.** Use a supplied CEFR, JLPT or other relevant standard for internal calibration. Otherwise infer a provisional level from natural descriptions of ability and desired work, such as beginner, basic conversation, conversational flow or specialized vocabulary. Distinguish topic interests from demonstrated ability and preserve differences between reading and listening. If ambiguity matters, ask what they can follow when people speak naturally: familiar words, the main idea or most details. Use this calibration for language support, question complexity and initial audio support.
+2. **Complete session time.** If unresolved, ask how much time they have, including listening, explanations and answering. Budget the rendered practice audio, reading, interaction and likely help together. Use this to choose how much source material can be taught meaningfully and how to distribute it across separate processed players.
+3. **Chunk size and practice pace.** Accept seconds or a focus on hearing words within speech, short phrases, sentences or exchanges. Separately establish the desired balance of repetition and conversational flow; ask about more repetition and slower practice versus more continuous conversation only when unclear. Translate these needs into Jutsu's chunk targets, speeds, repetitions and progressive joining. Word/phrase/sentence descriptions express a learning focus; Jutsu chooses the actual boundaries. Preserve substantive conversation regardless of chunk size.
+4. **Supplemental materials.** Include excerpt-specific vocabulary and grammar at the calibrated level unless declined; do not ask for permission to include them. Resolve additional requested support, such as transcripts, pronunciation guidance or reading aids, and the instruction language from context. If needed, ask whether the learner can comfortably read the script or needs readings alongside it. Plan where materials help connect audible speech with meaning, rather than merely attaching a glossary.
+5. **Listening goal and difficulty.** Establish what this lesson should help the learner do. When unclear, ask what is hardest: recognizing known words in speech, understanding unfamiliar expressions, or keeping up with the conversation. Recognition difficulties call for spoken-form explanation and focused processed replay; unfamiliar language calls for contextual vocabulary/grammar and a return to the exchange; losing the thread calls for connecting replies, events, intentions and references across progressively joined speech. Use actual replies to refine this understanding during the lesson.
+6. **Content and familiarity.** Establish the requested language/dialect, topic, source type and any supplied source. Ask about background familiarity only when it changes preparation, such as whether the learner already knows a show's characters. Supply enough context to understand the exchange without requiring outside viewing or knowledge.
+7. **Interaction.** Use the current interface and established preferences to determine how the learner can respond and access notes. If uncertain, ask whether they can read and type during the lesson or will respond aloud, using modes the interface supports. Design accessible response forms that reveal listening understanding without assuming equal writing or speaking ability.
 
-## Conduct the interaction
+Apply the prepared guidance in [lesson-design.md](references/lesson-design.md). Its research has already been done; use the findings and their stated limits without reopening the papers. Plan what each response reveals, how feedback leads forward and what each return to a recording accomplishes. The learner supplies their needs; instructional design and processing settings remain the agent's responsibility. Do not derive universal durations, repetition counts or activity sequences from research examples.
 
-Present one main audio player with its actual approximate duration and a brief target-language explanation of its parts and joined passes. **Before playback**, give a specific listening purpose and response frame: for example, assign the speakers' choices, reconstruct a route and time, or explain what changed between two turns. Pick the task from this recording's supported meaning; those examples are not a fixed menu. Permit an unknown marker. Keep the answer and transcript hidden initially.
+Use real conversations entirely in the target language, without English audio or phrasebooks. Keep generated practice conversations in the target language too. Give coaching and explanations in the user's established instruction language unless they request immersion.
 
-Ask the learner to respond after the complete track. A reply starts the next chat turn; do not claim to detect playback completion. Render local audio as `![target-language label](/absolute/path/audio.wav)`.
+Save the literal request, clarifications, settled planning choices, opt-outs and intended date. On continuation, read the saved lesson and actual learner replies before proceeding.
 
-Compare the learner's expressed meaning with the saved evidence, accepting equivalent wording:
+## Turn the conversation into processed listening practice
 
-- **Supported answer:** Acknowledge it, then elicit a relevant connection or supporting expression when that advances this task. Do not turn every successful answer into another quiz.
-- **Partial answer:** Acknowledge the supported part. Ask one narrower question about the missing relationship and deliver its enclosing question/answer replay.
-- **Incorrect answer:** Identify the specific mismatch without inventing why they misheard. Replay the relevant surrounding turns and elicit the correction before summarizing it.
-- **Needs help:** First distinguish an unclear prompt from unclear audio. Simplify the question; replay the enclosing exchange. If needed, show the relevant verified target-language words and meaning, replay with that support, then ask the learner to connect the answer back to the conversation. Record that text support was given; it does not prove unaided recognition.
-- **Uncertain evidence:** Investigate the recording again using the evidence procedure. Do not mark the learner wrong on an unresolved detail or require them to supply your missing transcript.
+Use the saved runtime settings and the existing CLI as documented in [preparation.md](references/preparation.md). Use [evidence.md](references/evidence.md) to resolve a specific source-wording issue, not to start a separate evidence project.
 
-For a reported listening difficulty, locate it in the transcript and original timeline, render the contextual replay through Jutsu, and elicit an interpretation of that exchange. If the location is unclear, ask for a word, speaker turn, or approximate place; do not fabricate a timestamp.
+Pull matching audio, retain its original and provenance, and obtain timed transcription through Jutsu. Investigate the actual recording and work through its utterances in context to identify relevant scenes and passages. Establish what the speakers are responding to and what the learner will learn by following the conversation. Verify the language needed for teaching and answers; uncertain ASR is not teaching evidence. Preserve user-specified sources and bounds. One developing scene or several related exchanges can supply the lesson.
 
-When continuing the scene would help or is requested, explicitly introduce a **new, imagined conversation** in the target language. Take a role and respond to what the learner actually says, one turn at a time. Assess intelligibility and relevance; invented dialogue has no source answer key. Never add it to the recording's transcript.
+**Change the transcript only when a specific reason and source evidence establish the correction; otherwise leave it unchanged.** Use the speech, scene and surrounding turns to resolve recognition errors. Never replace a form because another is more common, standard, grammatical or expected: people say unusual things. Retain the original and briefly record the changed wording, source interval and evidence that proves the change. A plausible interpretation or recognizer agreement is not proof. Unresolved wording remains uncertain and cannot become an answer key. This is justification for actual edits, not a research or implementation-proof document.
 
-## Save the handoff
+Express the learning needs in Jutsu's format JSON: target chunk size, speeds, repetitions, sequencing, joining and gaps. Learners closer to beginners need smaller chunks, more repetitions and greater slowdown; more advanced learners need longer chunks, fewer repetitions and less slowdown. Configure chaining and the balance of repetition and flow to suit the request, and let Jutsu calculate the units and play order. Preserve explicitly chosen formats; resolve conflicts in learning terms rather than silently changing them.
 
-Maintain `listening/YYYY-MM-DD/task.md` with normal file tools. It is an assistant-readable record, not an application API:
+For each selected excerpt, use Jutsu's sequence report to settle the format's chunking, joining and estimated listening time before rendering. Pass the source, bounds, chosen format JSON and output path to the CLI and use the finished file it returns. Fit teaching and learner responses around the actual player and measured duration. Source duration, individual chunk size, expanded playback and interactive session time are different quantities. Keep substantive conversation while making practice manageable; neither a long uninterrupted repetition track nor a tiny standalone quiz provides the lesson.
 
-- Literal request, date/timezone, target language/dialect, and readiness or the specific unresolved failure.
-- Source URL/page and retained local original; selected original interval; actual format; transcript and evidence files.
-- Main player path, render metadata path, complete measured duration, and the exact opening/pending learner prompt.
-- Each answer proposition's original evidence and contextual replay bounds; acceptable paraphrases and unresolved details.
-- Latest actual learner response, help already supplied, and next turn. Keep any simulated test responses explicitly separate.
+## Build the teaching around the processed passages
 
-Keep answer notes private during initial elicitation. After each learner turn, update the pending prompt and support record so the next scheduled event or resumed chat can continue accurately. Tomorrow's preparation must not overwrite today's unfinished task.
+For each section, connect its actual processed player and original source interval to what the learner will understand, the language support they need, an accessible prompt and response form, and how their response leads forward. Questions may develop an interpretation, focus attention on an expression or elicit a meaningful response to a speaker. Prepare the supported meaning and relevant source wording so feedback comes from evidence. Accept equivalent meanings, fragments and uncertainty.
+
+Develop vocabulary and grammar notes from the whole selected conversation at the agreed level. Connect expressions and constructions to the speech heard in the processed passages. Cover consequential learning needs and deliver other requested materials in their requested form.
+
+The processed lesson clips must contain and support the vocabulary and grammar taught from them. Lessons and cards use the same base audio. An unclear lesson or card clip means the audio or passage selection has failed for both: reselect clear audio, rerun Jutsu, and rebuild the affected teaching and cards together before delivery. Do not drop taught points to work around bad audio.
+
+When teaching needs or output problems call for a change, revise the format JSON or the selected conversational excerpt and rerun Jutsu. A missed referent may need a wider exchange; difficult speech may need a different chunk target or speed sequence. Use the new app output directly. If the app cannot produce suitable practice within the request, explain the concrete limitation rather than replacing its segmentation or sequencing with your own. Finish the full progression, notes, interaction and conclusion before presenting its first study passage. Estimate session time including listening, reading, responses and help.
+
+## Prepare requested Anki flashcards
+
+When flashcards are requested, they are part of the lesson deliverable. Use the prepared card-authoring and packaging guidance in [anki.md](references/anki.md), applying existing-deck instructions only when adding to an existing deck. Clarify whether to create a new Anki deck or add to an existing one unless already specified. For an existing deck, identify the destination and obtain access to it or an export before preparing additions. Package the authored cards with the existing `language-jutsu anki cards.json --output lesson.apkg` command.
+
+**Derive the cards from the prepared lesson: points in the lesson go into the cards.** Cover every vocabulary and grammar point taught or practised across its excerpts, notes, explanations and activities, except an explicit user-requested exclusion or a point already covered in the destination deck. Card count follows that coverage. Do not choose a smaller set of card targets and write or reduce the lesson to match it. When lesson teaching changes, update its cards too.
+
+Use exactly three card types: **Vocab** tests one word, or a phrase when the taught meaning requires it; **Grammar** teaches one grammatical point: the card's sentence with only the grammatical piece blanked, all vocabulary visible, and a short hint saying what the piece does; the answer is the piece; **Listening** tests hearing a short phrase, generally the session's chunk length or shorter, either by recalling what was said or filling one missing word. Audio supplies context for Vocab and Grammar and need not isolate their target. Several cards can use the same sentence and processed recording for different points. Each card's sentence is the sentence that fits that card, and its audio is that sentence.
+
+Select the processed audio while writing each card: its spoken content, written sentence, meaning and recall question must agree. Every back includes the full source sentence, relevant processed audio and a succinct explanation where needed. Include a sentence translation for B1 or below or when requested, using the established support language and honoring translation opt-outs. Review the lesson and its cards together before delivery; a card-production problem does not authorize changing the lesson's coverage.
+
+## Review the complete learning experience
+
+Work through the actual processed players, notes, instructions and response opportunities in the learner's order, using only the support available then and knowledge reasonably expected at their level. Judge whether the progression makes smaller speech units understandable and builds toward following connected conversation. Check coverage, explanations, pacing and where each interaction leads against the complete prompt together. Repair the processing or teaching wherever the experience fails, then review the complete revised lesson again.
+
+Review the exact Jutsu output files that will be presented, from the opening player through subsequent practice, alongside their app-generated sequence reports. Apply explicit opt-outs where given. Human feedback follows this preparation; structural validation and rehearsal do not establish a user-vetted lesson.
+
+## Teach through the processed progression
+
+Introduce the situation, learning aim and approximate session time. Provide the relevant notes and context, explain what to attend to in the first processed passage, and present its player with a manageable response invitation. Render local audio as `![descriptive label](/absolute/path/audio.wav)`. Wait for the learner's actual reply; chat cannot detect playback completion.
+
+Use each reply to continue the learning work:
+
+- When the learner understands, build on that meaning through the next processed passage, a useful expression or a response to a speaker. Carry the conversation forward.
+- When understanding is partial or mistaken, locate the missing relationship or misleading cue. Explain the distinction using verified language and work through focused processed practice that reconnects it to the enclosing exchange.
+- When the learner is lost, distinguish unclear instructions, unknown language and difficulty recognizing speech. Supply the needed explanation or verified text, adapt the processed practice and return to meaning with less support. Repeating an answer you supplied is supported performance, not independent comprehension.
+
+As joined passages grow, help the learner connect turns and use the language they have studied. Recognizing a phrase, understanding its role and producing it are different accomplishments. Deliver the notes where useful rather than withholding them for a quiz. For several sources, make transitions clear and help transfer learning without inventing continuity between recordings.
+
+If conversational continuation serves the lesson, establish an imagined situation and reason to speak, then take a role in the target language one turn at a time. Respond to the learner's meaning and correct selectively; distinguish generated dialogue from source speech.
+
+Conclude after the learning progression has been carried through, adapting to actual understanding and fatigue. Refer to what the learner can now follow, the support they used and what still needs practice. Invite their assessment of difficulty, pace and usefulness. Record actual feedback; do not infer general listening gains or user acceptance from completed activities alone.
+
+## Keep the lesson resumable
+
+Resolve this skill directory through symlinks; the repository is two directories above it. Use its durable `listening/` directory unless the user chose another location. Store usable repository, lesson-root, Python and model paths in `listening/settings.md`.
+
+Maintain `listening/YYYY-MM-DD/task.md`, with separate lesson subdirectories when needed. Save the request and clarifications, content and instruction languages, source/provenance and evidence paths, processed progression and formats, measured player durations, notes and other materials, and exact pending prompt. Keep these current after revisions. Record actual replies, help provided, covered material and the next learning activity. Keep simulated reviews separate from learner responses.
+
+For separate preparation and start reminders, use [scheduling.md](references/scheduling.md). Installing or testing the skill does not activate reminders. Tomorrow's preparation preserves today's unfinished lesson, and resumption continues from the actual pending turn. A prepared lesson, a completed human session and a user-vetted result are distinct facts.

@@ -4,6 +4,32 @@ A Rust CLI project for preparing foreign-language recordings for repeated listen
 
 The CLI decodes audio, selects a source window, finds pause-based units, and renders the learning formula with pitch-preserving tempo changes and practice gaps. `--decode-only`, `--segment-only`, and `--sequence-only` expose the earlier stages for testing. `--transcribe` generates source-language text and timestamps through an MLX Whisper helper.
 
+## Languages
+
+Pass a code or one of these names to `--language`. Names are case-insensitive and normalize to the listed code in metadata and transcription requests. Other nonempty language labels remain accepted for audio processing; `--dialect` remains an optional label.
+
+| Language / accepted names | Code | MLX Whisper transcription |
+| --- | --- | --- |
+| French | `fr` | Supported by multilingual models |
+| Italian | `it` | Supported by multilingual models |
+| German | `de` | Supported by multilingual models |
+| Mandarin, Chinese | `zh` | Supported by multilingual models |
+| Cantonese | `yue` | Requires a model with the Cantonese token, such as large-v3 or the default large-v3-turbo |
+| Korean | `ko` | Supported by multilingual models |
+| Farsi, Persian | `fa` | Supported by multilingual models |
+| Hindi | `hi` | Supported by multilingual models |
+| Kiswahili, Swahili | `sw` | Supported by multilingual models |
+| isiZulu, Zulu | `zu` | Not supported by the current MLX Whisper tokenizer |
+| isiXhosa, Xhosa | `xh` | Not supported by the current MLX Whisper tokenizer |
+| Sesotho | `st` | Not supported by the current MLX Whisper tokenizer |
+
+All listed languages can use decoding, segmentation, sequencing and study-audio rendering. Transcription support follows the [MLX Whisper language table](https://github.com/ml-explore/mlx-examples/blob/main/whisper/mlx_whisper/tokenizer.py); the [large-v3 model introduced the Cantonese token](https://huggingface.co/openai/whisper-large-v3).
+
+```sh
+cargo run -- recording.mp3 --language french \
+  --format formats/default.json --output study.mp3
+```
+
 ## Install the guided listening skill
 
 After cloning this repository, run from its directory:
@@ -16,9 +42,17 @@ This links the bundled [language-jutsu-listening](skills/language-jutsu-listenin
 
 In Codex, invoke `$language-jutsu-listening` and describe the conversation you want to study, including any language, dialect, topic, level, and playback-format preferences. If the skill does not appear, restart Codex. Codex also discovers it directly when working in this checkout through `.agents/skills`; see [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
 
-The skill prepares conversational audio, grounds questions in source evidence, elicits responses, and provides contextual replays. It includes separate preparation and start reminder setup; installation does not activate reminders.
+The skill prepares and conducts a full interactive lesson around the conversation you request: chunked listening, explanations tied to the speech, learner responses, and returning to the connected conversation. It includes separate preparation and start reminder setup; installation does not activate reminders. The rewritten lesson design is undergoing a real learner session; human usability is not yet accepted.
 
 Install audio dependencies separately: Rust/Cargo and [FFmpeg/ffprobe](#generate-study-audio), plus the [YouTube dependencies](#youtube-input) for URLs and [MLX Whisper](#transcribe-source-audio) for transcription.
+
+## Build an Anki package
+
+```sh
+cargo run -- anki cards.json --output lesson.apkg
+```
+
+Packages authored Vocab, Grammar and Listening cards with embedded audio into a new `.apkg`, without accessing a live Anki collection. The JSON manifest supplies deck identity, language, card content and media paths; note identities remain stable across revisions. See the [input format and card requirements](skills/language-jutsu-listening/references/anki.md#package-for-anki). Existing output files are never replaced.
 
 ## Generate study audio
 
@@ -124,7 +158,7 @@ The report retains source metadata, effective settings, all detected quiet inter
 
 `chunking.chunk_target_size_seconds` in the format JSON defaults to **6**. Override it for a run with `--chunk-target-size-seconds 2` or `--chunk-target-size-seconds 10`. Fractional seconds are accepted. The target refers to original source duration before tempo changes; the formula and practice gaps remain separate.
 
-Pause detection is automatic. The detector estimates local quiet and active levels from the audio, keeps brief gaps as candidates, and ranks cuts by proximity to the target and pause confidence. Confidence considers relative quietness and duration; there is no user-selected minimum pause duration or absolute volume threshold. A quieter speaker's region is analyzed at its own level rather than treated as one long gap.
+Pause detection adapts to local speech/background levels and nearby gap durations, independently of the requested chunk size. Brief energy dips are excluded, and extra pause duration has diminishing benefit. Cuts use the nearest safe point inside a pause, balancing pause quality against distance from the target. There are no detector settings to tune; a quieter speaker's region is analyzed at its own level rather than treated as one long gap.
 
 The window end is a final candidate, and short-fragment handling scales with the target. Without a useful pause, a chunk can exceed the target; audio is retained rather than cut blindly. An entirely zero signal fails explicitly. Pause classification is an acoustic heuristic, so music, overlapping voices, and highly variable noise can still make boundaries uncertain.
 
@@ -140,7 +174,7 @@ cargo run -- recording.mp3 --language ar --dialect shami \
 
 The report includes the full segmentation and effective format, plus ordered plays with group index, unit membership, original source frame range, speed and its array position, repeat position, estimated output timing, and following gap. Indices are zero-based, and unit membership is a half-open range. Joining reads the continuous original source interval; practice gaps remain separate.
 
-`timing-then-joining` visits all spans at one speed before the next speed. `joining-then-timing` visits all speeds for one span before the next span. Both honor duplicates, consecutive repetitions, local groups, and partial final groups. No added gap follows the final play. Estimates precede rendering and can differ slightly from actual DSP/codec timing. Occurrences are generated lazily and streamed to JSON; count and duration overflow fail before publication.
+`timing-then-joining` visits all spans at one speed before the next speed. `joining-then-timing` visits all speeds for one span before the next span. Both honor duplicates, consecutive repetitions, local playback groups, and partial final groups. Joins slide across group boundaries, capped at `group_size`: A, B, C becomes A, B, AB, C, BC with limit 2, or A, B, AB, C, ABC with limit 3 or more. No added gap follows the final play. Estimates precede rendering and can differ slightly from actual DSP/codec timing. The unit count and playback format expand once into an owned sequence containing every play and following gap. Rendering, reports, and duration estimates consume those stored entries; count and duration overflow fail before publication.
 
 ## Test the decoder
 

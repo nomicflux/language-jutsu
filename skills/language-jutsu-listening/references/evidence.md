@@ -1,44 +1,42 @@
-# From audio to defensible learning questions
+# Evidence for transcript corrections
 
-## Build the evidence before the question
+Use this guidance to resolve a specific wording problem while preparing the lesson. It does not call for a separate evidence paper, implementation analysis or a routine sequence of model comparisons.
 
-Obtain any publisher transcript/captions for the exact recording. Keep source text, unprompted Jutsu/Whisper output, and your interpretation distinct. Translated subtitles, summaries, nearby episodes, and titles are not the recording's transcript. Compare the audible propositions needed for the proposed task: speaker, number, negation, referent, and whether a turn is a question, assertion, quotation, or imagined event.
+## Change only what the source supports
 
-In the lesson's private answer notes, save each answer proposition with the source words, speaker/turn support, original interval, corroborating source, uncertainty, and enclosing replay bounds. Derive the prompt from supported relationships, not trivia selected before listening evidence exists. Write an achievable response frame that does not give away the answer. Accept equivalent meaning, not just the saved sentence.
+Retain the original transcript. Change it only when there is a specific reason and source evidence establishing the correction; otherwise leave it unchanged. Leaving uncertain ASR unchanged does not make it verified teaching material.
 
-If text is missing or doubtful, Jutsu transcribes the audio. For a disputed answer-critical detail, transcribe its enclosing exchange again without supplying the candidate answer. Wider context may fix a cut word or referent. A repeated decode is another estimate, not independent proof.
+For each actual edit, briefly record the original-source interval, before/after wording and the particular evidence that proves the change and fits the recorded speech. Include deletions, additions, spelling, word boundaries and punctuation when they change interpretation. Keep this concise justification with the working transcript, outside learner-facing cards; no separate report is required.
 
-## Compare actual audio when needed
+Use the scene, surrounding turns, speaker intentions, referents and dialect knowledge to understand the exchange and identify possible readings. Establish the proposed reading from the speech and specific contextual evidence: for example, an explicit repetition, a name spelled out, or a later reply resolving a referent. General plausibility, a more familiar expression, fluent wording, repeated decoding or recognizer agreement does not prove a correction. Do not claim to have heard a distinction that the available tools did not let you assess.
 
-The bundled `scripts/compare_audio.py` implements the exercised local Qwen2-Audio route. It takes the actual original-speed contextual WAV, not Whisper text, and asks for transcription and supporting words without the intended answer. It is needed when publisher evidence is unavailable or an answer-critical disagreement remains; it does not establish universal language/dialect coverage or guarantee correctness.
+Never change wording merely because another form is more common, standard, polite, grammatical or expected. Preserve spoken repetitions, false starts, unusual expressions and apparent mistakes. Do not silently remove a clitic, syllable or distinction between names to obtain a familiar form.
 
-On a supported Apple Silicon machine, use an existing configured runtime or prepare a dedicated durable environment. The investigated runtime version is pinned here so this helper's boundary is reproducible:
+Publisher text must belong to the exact recording. Translated subtitles can support meaning but cannot establish source-language wording. Keep publisher text, unprompted transcription and your interpretation distinct. Check answer-critical speaker relationships, negation, numbers and referents in their enclosing exchange.
+
+If the evidence does not resolve the wording, leave the transcript unchanged, mark the uncertainty separately and do not teach that wording as established or use it as an answer key. Resolve uncertainty that prevents the requested lesson; if it remains unresolved, state the concrete limitation. Do not replace the requested substantive conversation with its one easy fact or mark a learner wrong on unresolved evidence.
+
+Apply supported corrections consistently to dependent translations, vocabulary, grammar, questions and cards. Their wording must come from the source, not merely agree with an edited transcript. This evidence work supports constructing the lesson; it is not a substitute for it.
+
+## Existing tools for a specific unresolved detail
+
+Use the retained recording and relevant surrounding turns first. When a new decode can resolve a specific problem, Jutsu can transcribe its enclosing exchange without the candidate answer in the prompt. A repeat decode is another estimate, not independent proof.
+
+The existing `scripts/compare_audio.py` is an optional Qwen2-Audio comparison using original-speed contextual WAV. Use the configured runtime and model paths from `listening/settings.md` when this comparison is needed. Do not write a replacement tool, inspect its implementation or set up another model as a routine lesson stage. This helper has failed on some Arabic recordings; repeating a failed comparison does not resolve uncertainty.
+
+Prepare its input through Jutsu with the bundled one-play format, keeping enough context for the disputed wording:
 
 ```sh
-python3 -m venv "$runtime"
-"$runtime/bin/python" -m pip install \
-  'mlx-audio @ git+https://github.com/Blaizzy/mlx-audio.git@e66ad2ff4eb96ce1149000187b30370cbcd707aa'
-"$runtime/bin/python" -c \
-  'from huggingface_hub import snapshot_download; import sys; snapshot_download("mlx-community/Qwen2-Audio-7B-Instruct-4bit", local_dir=sys.argv[1])' \
-  "$audio_model"
-```
+cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
+  --language "$language" --start "$start" --end "$end" \
+  --format "$skill/assets/reference.json" \
+  --output "$lesson/evidence.wav" --metadata-output "$lesson/evidence.json"
 
-Set `runtime` and `audio_model` to chosen durable setup locations; this downloads a multi-gigabyte model. Save the resulting Python/model paths in `listening/settings.md`. Do not install or redownload for every lesson. If the runtime is unavailable, complete acquisition and transcription work, then resolve that concrete dependency before claiming this comparison happened.
-
-```sh
 "$audio_python" "$skill/scripts/compare_audio.py" \
-  --audio "$lesson/repair.wav" --model "$audio_model" \
+  --audio "$lesson/evidence.wav" --model "$audio_model" \
   --language "$language" --output "$lesson/audio-report.json"
 ```
 
-The backend only consumes 30 seconds. The helper refuses longer files. For longer requested content, **the skill** renders and analyzes overlapping excerpts that retain complete conversational turns, recording each original interval; it does not truncate the source or ask the learner to work around this analysis limit. If one needed relationship crosses excerpts, retain overlap and compare it across them. All requested audio still belongs to the task.
+The helper accepts at most 30 seconds. If the specific disputed relationship requires more context, use overlapping contextual excerpts through Jutsu. This analysis input is not a learner-facing practice player.
 
-Read `result.text` as a report to compare with Whisper and any publisher evidence. Its `result.segments` contain generation timing, not audio timing: never use them to cut replays. The script records the input path, hash, measured duration, model path, runtime version, neutral prompt, full model result, and elapsed time. Actual construction is in [compare_audio.py](../scripts/compare_audio.py); the model's report is not a verdict.
-
-## Resolve what the evidence can establish
-
-Models can agree and still be wrong. Compare their exact supporting words, the surrounding audio-derived turns, and any reliable publisher evidence. Investigate disagreements on the same requested content. Do not infer speaker identities from Whisper fields or correct a spelling from a weaker model merely because it produced a confident sentence.
-
-A doubtful name spelling may coexist with a supported travel duration. Ask about the supported meaning while keeping the name uncertainty explicit. If the user specifically asked to settle that name, it remains an unresolved part of their task; asking a different question does not complete it. Likewise, unresolved negation or numbers cannot become a correct-answer key. Preserve alternatives and explain the limit in the target language while working on the supported portions. Do not narrow the skill's language/content scope to whichever samples these models handled well.
-
-When a learner's answer conflicts with supported evidence, use its contextual replay and a focused question. When the evidence itself is unresolved, do not mark the learner wrong. Supplying the transcript is teaching support; after it is supplied, record subsequent success as supported comprehension rather than unaided listening.
+Read `result.text` as a candidate account, not a verdict. Its `result.segments` contain generation timing, not source-audio timing; never use them to select source intervals. Compare the proposed wording with the recording and exact-source evidence under the correction rule above. If the helper is unavailable or inconclusive, that does not authorize a transcript change.

@@ -1,32 +1,118 @@
-use std::{error::Error, io::Write, path::Path, time::Duration};
+use std::{error::Error, io::Write, ops::Range, path::Path, time::Duration};
 
 use serde::Serialize;
 use tempfile::NamedTempFile;
 
 use crate::{
     format::Format,
-    formula::{Sequencing, Speed},
+    formula::{Formula, Sequencing, Speed},
     media::DecodedInfo,
     segmentation::{Analysis, FrameRange},
 };
 
 #[derive(Serialize)]
-pub(crate) struct Play<'a> {
+pub(crate) struct Play {
     group_index: usize,
     unit_start: usize,
     unit_end_exclusive: usize,
-    pub(crate) source_range: FrameRange,
     speed_index: usize,
-    pub(crate) speed: &'a Speed,
+    pub(crate) speed: Speed,
     repetition_index: usize,
+    #[serde(skip)]
+    pub(crate) following_gap: Duration,
+}
+
+impl Play {
+    pub(crate) fn source_range(&self, units: &[FrameRange]) -> FrameRange {
+        FrameRange {
+            start_frame: units[self.unit_start].start_frame,
+            end_frame: units[self.unit_end_exclusive - 1].end_frame,
+        }
+    }
+
+    fn sound_seconds(&self, units: &[FrameRange], sample_rate: u32) -> f64 {
+        let range = self.source_range(units);
+        (range.end_frame - range.start_frame) as f64 / f64::from(sample_rate) / self.speed.factor()
+    }
+}
+
+pub(crate) struct Sequence {
+    plays: Vec<Play>,
+    pub(crate) group_count: usize,
+}
+
+impl Sequence {
+    pub(crate) fn build(unit_count: usize, formula: &Formula) -> Result<Self, Box<dyn Error>> {
+        if unit_count == 0 {
+            return Err("cannot sequence an empty set of practice units".into());
+        }
+        let group_size = formula.group_size().get();
+        let mut groups = Vec::new();
+        for start in (0..unit_count).step_by(group_size) {
+            let mut spans = Vec::new();
+            for unit in start..start.saturating_add(group_size).min(unit_count) {
+                spans.push(unit..unit + 1);
+                if unit > 0 && group_size > 1 {
+                    spans.push((unit + 1).saturating_sub(group_size)..unit + 1);
+                }
+            }
+            groups.push(spans);
+        }
+        let span_count: usize = groups.iter().map(Vec::len).sum();
+        let capacity = span_count
+            .checked_mul(formula.speeds().len())
+            .and_then(|count| count.checked_mul(formula.repetitions().get()))
+            .ok_or("play count overflow")?;
+        let mut plays = Vec::new();
+        plays.try_reserve_exact(capacity)?;
+        for (group_index, spans) in groups.iter().enumerate() {
+            let mut append = |span: &Range<usize>, speed_index: usize, speed: Speed| {
+                for repetition_index in 0..formula.repetitions().get() {
+                    plays.push(Play {
+                        group_index,
+                        unit_start: span.start,
+                        unit_end_exclusive: span.end,
+                        speed_index,
+                        speed,
+                        repetition_index,
+                        following_gap: formula.gap(),
+                    });
+                }
+            };
+            match formula.sequencing() {
+                Sequencing::TimingThenJoining => {
+                    for (speed_index, &speed) in formula.speeds().iter().enumerate() {
+                        for span in spans {
+                            append(span, speed_index, speed);
+                        }
+                    }
+                }
+                Sequencing::JoiningThenTiming => {
+                    for span in spans {
+                        for (speed_index, &speed) in formula.speeds().iter().enumerate() {
+                            append(span, speed_index, speed);
+                        }
+                    }
+                }
+            }
+        }
+        plays.last_mut().unwrap().following_gap = Duration::ZERO;
+        Ok(Self {
+            plays,
+            group_count: groups.len(),
+        })
+    }
+
+    pub(crate) fn plays(&self) -> &[Play] {
+        &self.plays
+    }
 }
 
 pub(crate) struct Plan<'a> {
     analysis: &'a Analysis,
     format: &'a Format,
     source: &'a DecodedInfo,
-    pub(crate) group_count: usize,
-    pub(crate) play_count: usize,
+    pub(crate) sequence: &'a Sequence,
     pub(crate) estimated_seconds: f64,
 }
 
@@ -35,11 +121,11 @@ impl<'a> Plan<'a> {
         analysis: &'a Analysis,
         format: &'a Format,
         source: &'a DecodedInfo,
+        sequence: &'a Sequence,
     ) -> Result<Self, Box<dyn Error>> {
-        let formula = &format.playback;
         let units = &analysis.units;
-        if units.is_empty() {
-            return Err("cannot sequence an empty set of practice units".into());
+        if sequence.plays.last().map(|play| play.unit_end_exclusive) != Some(units.len()) {
+            return Err("sequence unit count does not match the practice units".into());
         }
         for (index, unit) in units.iter().enumerate() {
             if unit.start_frame >= unit.end_frame
@@ -53,38 +139,14 @@ impl<'a> Plan<'a> {
                 );
             }
         }
-        let group_count = units.len().div_ceil(formula.group_size().get());
-        let span_count = units
-            .len()
-            .checked_mul(2)
-            .and_then(|count| count.checked_sub(group_count))
-            .ok_or("joined span count overflow")?;
-        let play_count = span_count
-            .checked_mul(formula.speeds().len())
-            .and_then(|count| count.checked_mul(formula.repetitions().get()))
-            .ok_or("play count overflow")?;
-        let mut span_frames = 0_u128;
-        for group in units.chunks(formula.group_size().get()) {
-            for (index, unit) in group.iter().enumerate() {
-                span_frames = span_frames
-                    .checked_add(u128::from(unit.end_frame - unit.start_frame))
-                    .ok_or("source duration overflow")?;
-                if index > 0 {
-                    span_frames = span_frames
-                        .checked_add(u128::from(unit.end_frame - group[0].start_frame))
-                        .ok_or("joined duration overflow")?;
-                }
-            }
-        }
-        let speed_multiplier: f64 = formula
-            .speeds()
+        let estimated_seconds = sequence
+            .plays()
             .iter()
-            .map(|speed| 1.0 / speed.factor())
+            .map(|play| {
+                play.sound_seconds(units, source.sample_rate.get())
+                    + play.following_gap.as_secs_f64()
+            })
             .sum();
-        let estimated_seconds = span_frames as f64 / f64::from(source.sample_rate.get())
-            * speed_multiplier
-            * formula.repetitions().get() as f64
-            + (play_count - 1) as f64 * formula.gap().as_secs_f64();
         Duration::try_from_secs_f64(estimated_seconds).map_err(|error| {
             format!("estimated sequence duration is not representable: {error}")
         })?;
@@ -92,50 +154,9 @@ impl<'a> Plan<'a> {
             analysis,
             format,
             source,
-            group_count,
-            play_count,
+            sequence,
             estimated_seconds,
         })
-    }
-
-    pub(crate) fn plays(&self) -> impl Iterator<Item = Play<'_>> {
-        self.analysis
-            .units
-            .chunks(self.format.playback.group_size().get())
-            .enumerate()
-            .flat_map(move |(group_index, group)| {
-                let span_count = group.len() * 2 - 1;
-                let speed_count = self.format.playback.speeds().len();
-                let group_start = group_index * self.format.playback.group_size().get();
-                (0..span_count * speed_count).flat_map(move |pair| {
-                    let (span_index, speed_index) = match self.format.playback.sequencing() {
-                        Sequencing::TimingThenJoining => (pair % span_count, pair / span_count),
-                        Sequencing::JoiningThenTiming => (pair / speed_count, pair % speed_count),
-                    };
-                    let (first, end) = if span_index == 0 {
-                        (0, 1)
-                    } else if span_index % 2 == 1 {
-                        let first = span_index.div_ceil(2);
-                        (first, first + 1)
-                    } else {
-                        (0, span_index / 2 + 1)
-                    };
-                    (0..self.format.playback.repetitions().get()).map(move |repetition_index| {
-                        Play {
-                            group_index,
-                            unit_start: group_start + first,
-                            unit_end_exclusive: group_start + end,
-                            source_range: FrameRange {
-                                start_frame: group[first].start_frame,
-                                end_frame: group[end - 1].end_frame,
-                            },
-                            speed_index,
-                            speed: &self.format.playback.speeds()[speed_index],
-                            repetition_index,
-                        }
-                    })
-                })
-            })
     }
 
     pub(crate) fn publish(&self, output: &Path) -> Result<(), Box<dyn Error>> {
@@ -144,7 +165,6 @@ impl<'a> Plan<'a> {
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
         let mut file = NamedTempFile::new_in(parent)?;
-        // Stream occurrences rather than collecting a potentially large repeated sequence.
         write!(file, "{{\"segmentation\":")?;
         serde_json::to_writer(
             file.as_file_mut(),
@@ -155,36 +175,87 @@ impl<'a> Plan<'a> {
         write!(
             file,
             ",\"group_count\":{},\"play_count\":{},\"estimated_seconds\":{},\"plays\":[",
-            self.group_count, self.play_count, self.estimated_seconds
+            self.sequence.group_count,
+            self.sequence.plays().len(),
+            self.estimated_seconds
         )?;
         let mut output_seconds = 0.0;
-        for (index, play) in self.plays().enumerate() {
+        for (index, play) in self.sequence.plays().iter().enumerate() {
             if index > 0 {
                 writeln!(file, ",")?;
             }
-            let sound_seconds = (play.source_range.end_frame - play.source_range.start_frame)
-                as f64
-                / f64::from(self.source.sample_rate.get())
-                / play.speed.factor();
-            let following_gap = if index + 1 == self.play_count {
-                Duration::ZERO
-            } else {
-                self.format.playback.gap()
-            };
+            let sound_seconds =
+                play.sound_seconds(&self.analysis.units, self.source.sample_rate.get());
+            let mut document = serde_json::to_value(play)?;
+            document["source_range"] =
+                serde_json::to_value(play.source_range(&self.analysis.units))?;
             let row = serde_json::json!({
                 "index": index,
-                "play": play,
+                "play": document,
                 "estimated_start_seconds": output_seconds,
                 "estimated_sound_seconds": sound_seconds,
-                "following_gap_ms": following_gap.as_millis()
+                "following_gap_ms": play.following_gap.as_millis()
             });
             serde_json::to_writer(file.as_file_mut(), &row)?;
-            output_seconds += sound_seconds + following_gap.as_secs_f64();
+            output_seconds += sound_seconds + play.following_gap.as_secs_f64();
         }
         writeln!(file, "]}}")?;
         file.flush()?;
         file.persist_noclobber(output)
             .map_err(|error| format!("cannot save sequence report: {error}"))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sequence_owns_expanded_plays_without_audio_or_a_retained_formula() {
+        let sequence = {
+            let formula: Formula = serde_json::from_value(serde_json::json!({
+                "sequencing": "joining-then-timing",
+                "segments": [0.7, 0.7, 1.0],
+                "joining": { "group_size": 2 },
+                "repetitions": 2,
+                "gap_ms": 700
+            }))
+            .unwrap();
+            Sequence::build(3, &formula).unwrap()
+        };
+        let plays = sequence.plays();
+        assert_eq!(plays.len(), 30);
+        assert_eq!(sequence.group_count, 2);
+        let expected_spans = [(0, 0, 1), (0, 1, 2), (0, 0, 2), (1, 2, 3), (1, 1, 3)];
+        for (plays, expected_span) in plays.chunks_exact(6).zip(expected_spans) {
+            for play in plays {
+                assert_eq!(
+                    (play.group_index, play.unit_start, play.unit_end_exclusive),
+                    expected_span
+                );
+            }
+            let timings: Vec<_> = plays
+                .iter()
+                .map(|play| (play.speed_index, play.speed.factor(), play.repetition_index))
+                .collect();
+            assert_eq!(
+                timings,
+                [
+                    (0, 0.7, 0),
+                    (0, 0.7, 1),
+                    (1, 0.7, 0),
+                    (1, 0.7, 1),
+                    (2, 1.0, 0),
+                    (2, 1.0, 1)
+                ]
+            );
+        }
+        assert!(
+            plays[..29]
+                .iter()
+                .all(|play| play.following_gap == Duration::from_millis(700))
+        );
+        assert_eq!(plays[29].following_gap, Duration::ZERO);
     }
 }

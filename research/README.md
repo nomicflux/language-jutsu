@@ -46,6 +46,7 @@ Significant pauses are sufficient candidate boundaries. Units should be reasonab
 
 ## Research documents
 
+- [Interactive lesson research](../skills/language-jutsu-listening/references/lesson-design.md): full-text studies informing the replacement listening skill; teaching choices and limits of the evidence.
 - [Spotify ingestion](./spotify-ingestion.md): public podcast/RSS audio, selective passthrough links, and limits of Spotify playback APIs.
 - [YouTube ingestion](./youtube-ingestion.md): current downloader/runtime requirements and integration into the implemented CLI.
 - [Broader listening research](./listening-research-survey.md): sound familiarization, word recognition, comprehension, captions, extensive listening, spacing, attention, and walking studies.
