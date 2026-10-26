@@ -1,18 +1,15 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    path::PathBuf,
+    process::{Command, Output},
+    sync::OnceLock,
 };
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 // Real whisper.cpp with the smallest multilingual model; fetched once into the HF cache.
 const MODEL: &str = "ggml-tiny.bin";
-// The Hub's x-linked-etag and x-linked-size for ggml-tiny.bin.
-const MODEL_SHA256: &str = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21";
-const MODEL_BYTES: u64 = 77_691_713;
 // Nothing listens here, so every request through this proxy fails.
 const DEAD_PROXY: &str = "http://127.0.0.1:9";
 
@@ -34,6 +31,7 @@ impl Run {
     }
 
     fn in_dir(dir: TempDir, input: &str, language: &str, model: &str, window: &[&str]) -> Self {
+        cached_model();
         let result = transcribe(&dir, input, language, model, window)
             .output()
             .unwrap();
@@ -94,19 +92,11 @@ fn cached_path(result: Output) -> PathBuf {
     PathBuf::from(stdout.trim().strip_prefix("Model cached: ").unwrap())
 }
 
-/// Every regular file under `dir` with its size; symlinks are not followed.
-fn files(dir: &Path) -> Vec<(PathBuf, u64)> {
-    let mut found = Vec::new();
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        let metadata = fs::symlink_metadata(&path).unwrap();
-        if metadata.is_dir() {
-            found.extend(files(&path));
-        } else if metadata.is_file() {
-            found.push((path, metadata.len()));
-        }
-    }
-    found
+/// Downloads the test model once per test run; tests needing it wait here until it is cached.
+/// hf-hub fails concurrent first downloads of one file by design (huggingface/hf-hub#115).
+fn cached_model() -> &'static PathBuf {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| cached_path(download_model(MODEL).output().unwrap()))
 }
 
 fn words(json: &Value) -> Vec<(String, f64)> {
@@ -253,43 +243,15 @@ fn existing_text_or_sidecar_is_never_replaced() {
 
 #[test]
 fn download_model_caches_the_file_in_the_hugging_face_cache() {
-    let path = cached_path(download_model(MODEL).output().unwrap());
+    let path = cached_model();
     let shown = path.display().to_string();
     assert!(shown.contains("models--ggerganov--whisper.cpp"), "{shown}");
     assert!(path.is_file());
 }
 
 #[test]
-fn concurrent_downloads_into_a_fresh_cache_download_once() {
-    let cache = tempfile::tempdir().unwrap();
-    let children: Vec<_> = (0..4)
-        .map(|_| {
-            download_model(MODEL)
-                .env("HF_HUB_CACHE", cache.path())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap()
-        })
-        .collect();
-    let paths: Vec<PathBuf> = children
-        .into_iter()
-        .map(|child| cached_path(child.wait_with_output().unwrap()))
-        .collect();
-    assert!(paths.iter().all(|path| *path == paths[0]), "{paths:?}");
-    assert!(paths[0].starts_with(cache.path()), "{paths:?}");
-    let digest = Sha256::digest(fs::read(&paths[0]).unwrap());
-    assert_eq!(format!("{digest:x}"), MODEL_SHA256);
-    let stored = files(cache.path());
-    let copies = stored.iter().filter(|(_, size)| *size == MODEL_BYTES);
-    assert_eq!(copies.count(), 1, "{stored:?}");
-    let partial = |path: &PathBuf| path.extension().is_some_and(|ext| ext == "incomplete");
-    assert!(!stored.iter().any(|(path, _)| partial(path)), "{stored:?}");
-}
-
-#[test]
 fn cached_model_is_used_without_network() {
-    cached_path(download_model(MODEL).output().unwrap());
+    cached_model();
     let empty = tempfile::tempdir().unwrap();
     let uncached = without_network(download_model(MODEL).env("HF_HUB_CACHE", empty.path()))
         .output()

@@ -54,16 +54,13 @@ CI run [40376744569](https://github.com/nomicflux/language-jutsu/actions/runs/40
 - `cargo test`: `language_names_reach_whisper_as_codes_and_round_trip_in_metadata` failed with `cannot fetch Whisper model ggml-tiny.bin: Cache lock timed out`.
 - Cause, from hf-hub 1.0.0 source: a run waiting for another run's download gives up after a fixed 10 s, and the parallel tests all started the first download of `ggml-tiny.bin` together. Reading hf-hub's full download path also showed that Windows stored the cache under `/tmp` (no `HOME`), kept two copies, and recopied 1.5 GiB on every online run. The "CAN'T VERIFY HERE" Windows cache cell had been left unread.
 
-### Model cache by construction
+### Model cache: hf-hub used as specified
 
-- hf-hub replaced by `src/model_cache.rs`, implementing the Hub cache specification. The design and its guarantees are in the plan's Phase 2, "Model cache by construction".
-- `cargo tree -i hf-hub`: no match. `cargo tree -i aws-lc-sys`: reqwest 0.13.5 → rustls → aws-lc-rs (TLS stack unchanged).
-- `cargo fmt --check` 0; `cargo clippy --all-targets -- -D warnings` 0; `cargo test` 74 passed (2 + 2 + 57 + 4 + 9), including:
-  - `concurrent_downloads_into_a_fresh_cache_download_once`: 4 simultaneous downloads; one 77,691,713-byte file whose SHA-256 is the etag; no `.incomplete` files.
-  - `cached_model_is_used_without_network`.
-  - `cache_folder_follows_the_hub_order`.
-- Scratch-cache layout: `blobs/be07e048…` (77,691,713 bytes), `snapshots/5359861c…/ggml-tiny.bin -> ../../blobs/be07e048…`, `refs/main` = `5359861c…`, `.locks/models--ggerganov--whisper.cpp/be07e048….lock`. A second run with `HTTPS_PROXY=http://127.0.0.1:9` printed the same path in 0.5 s.
-- `./setup.sh` on the Mac: exit 0, with `Model cached:` in the existing `~/.cache/huggingface/hub` (the layout hf-hub wrote is read unchanged).
+- Commit 83e797b replaced hf-hub with the agent's own cache code. The user rejected it ("YOU. REPLACED. THE. STANDARD. CACHE."), and it is reverted. Its CI run [40404507940](https://github.com/nomicflux/language-jutsu/actions/runs/40404507940) passed all four jobs, but it tested the reverted code.
+- hf-hub stays. `src/model_cache.rs::fetch_model` passes the standard cache folder (`HF_HUB_CACHE` → `$HF_HOME/hub` → `$XDG_CACHE_HOME/huggingface/hub` → `home_dir()/.cache/huggingface/hub`) through `HFClient::builder().cache_dir(…)`. hf-hub's README on `main` puts that responsibility on the caller. The model is pinned to commit `5359861c…`, so a cached model returns before any request or Windows recopy.
+- Tests: per the hf-hub maintainer on #115 ("use a setUp part in your unit tests to make sure the model is only downloaded once"), `cached_model()` runs `download-model ggml-tiny.bin` once through a `OnceLock`, and every model-using test waits on it.
+- `cargo fmt --check` 0; `cargo clippy --all-targets -- -D warnings` 0; `cargo test` 73 passed (2 + 2 + 57 + 4 + 8).
+- `HF_HUB_CACHE=<empty> cargo test --test transcription`: 8 passed, with one download into the empty cache.
 
 ### First attempt
 
