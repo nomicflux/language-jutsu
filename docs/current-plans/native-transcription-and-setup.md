@@ -65,6 +65,19 @@
 >
 > You have the context. What the fuck sort of question is this. YOU HAVE THE CONVERSATION AND _WHY_ WE DECIDED NOT TO INSTALL PYTHON, IT IS NOT A BLACK-BOX COMMAND.
 
+After the Windows CI test failed on hf-hub's "Cache lock timed out" (the agent's report said "On Windows the download took longer than 10 seconds"):
+> "On Windows the download took longer than 10 seconds" Uh huh, yes? So? We then wait longer. You fucked up the tests if this is a thing. OF COURSE it could take an indeterminate amount of time to download a model.
+
+> You are still not addressing the root problem.
+
+> "CAN'T VERIFY HERE"
+>
+> YOU _RECOGNIZED_ THAT YOU HAD A FLAW AND DID NOT SEARCH IT OUT.
+
+> YES, MAKE IT WORK, AND MAKE IT WORK BY _CONSTRUCTION_. NO MORE ARBITRARY TIMEOUT MANAGEMENT OR HOPING AND PRAYING. PLAN SO THIS FUCKING _WORKS BY CONSTRUCTION AND RESEARCH_, THEN IMPLEMENT>
+
+("YES" answers the agent's statement: model fetching must meet "HF cache + subcommand" on all three systems; on Windows the model goes in the user's real Hugging Face cache, in one copy, without being recopied on each run; a run that finds another download in progress waits for it, however long it takes, then uses that file instead of downloading again; the tests then download the model once and only read it after that.)
+
 Answers on 2026-10-26 (question text in [setup-dependencies.md](setup-dependencies.md)):
 - Verification of platforms this Mac cannot run: "GitHub Actions (Recommended)" (option: "Add a workflow file to the repo and push this branch to GitHub; … Publishes the branch and adds a CI file.")
 - Windows ARM: "Where is this going to happen?"
@@ -99,8 +112,20 @@ Answers on 2026-10-26 (question text in [setup-dependencies.md](setup-dependenci
 
 Probe crate: whisper-rs 0.16.0 (`metal`) and hf-hub 1.0.0 (`blocking`), built and run on this Mac (Apple M3 Pro).
 
-- **hf-hub 1.0.0 blocking download:** `HFClientSync::new()?.model("ggerganov", "whisper.cpp").download_file().filename(name).send()? -> PathBuf`. The probe fetched `ggml-tiny.bin` to `~/.cache/huggingface/hub/models--ggerganov--whisper.cpp/snapshots/5359861c…/ggml-tiny.bin` (the standard HF cache layout). `HF_HUB_CACHE` → `$HF_HOME/hub` → `~/.cache/huggingface/hub`.
-- **Offline:** `download.rs:424`: a transient network error falls back to the cache. Probe run with `HF_ENDPOINT=http://127.0.0.1:9` resolved the cached file and transcribed (exit 0).
+- **hf-hub 1.0.0 (used in Phase 1, replaced in Phase 2; source read 2026-10-26 after the Windows CI failure):**
+  - Cache folder: `HF_HUB_CACHE` → `HUGGINGFACE_HUB_CACHE` → `HF_HOME` → `XDG_CACHE_HOME` → `$HOME/.cache/huggingface/hub`; with no `HOME` it uses `/tmp` (`constants.rs:27–56`). Windows has no `HOME`, so CI cached the model at `/tmp/.cache/huggingface\hub\…`.
+  - A run waiting for another run's download gives up after a fixed, private 10 s (`constants.rs:22`, `cache/storage.rs:12–29`). After getting the lock it does not recheck the blob, so it downloads again (`repository/download.rs:522–529, 549–578`).
+  - With revision `main`, every call makes a network request even when cached (`download.rs:408–458`). On Windows, every call that reaches the network deletes the snapshot file and copies the blob again (`cache/storage.rs:274–306`), and the model is stored twice (blob + copy).
+  - Interrupted downloads restart from zero (`File::create` on `.incomplete`, `download.rs:976–1018`). A transient network error falls back to the cache (`download.rs:419–428`).
+- **Hub cache specification** ([Hub Local Cache](https://huggingface.co/docs/hub/local-cache), "a reference for reimplementing the cache system in any language"):
+  - Location: `HF_HUB_CACHE` (priority), else `$HF_HOME/hub`, else `~/.cache/huggingface/hub`. The huggingface_hub docs add: "If `HF_HOME` is not set, the default home will be `"$XDG_CACHE_HOME/huggingface"`".
+  - Layout: `<cache>/models--<org>--<repo>/{blobs/<etag>, refs/<revision> (commit hash), snapshots/<commit>/<file> -> ../../blobs/<etag>}`. Locks: `<cache>/.locks/<repo_folder>/<blob_hash>.lock`.
+  - File resolution: read `refs/<revision>`, then `snapshots/<commit>/<file>` exists → cached, no network needed.
+  - Windows: "On Windows systems where symlinks are not available … actual file copies are placed directly in `snapshots/` instead of symlinks. The `blobs/` directory … [is] not used in this mode."
+- **Hub download protocol (probe 2026-10-26, `curl -sI …/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin`):** `HTTP/2 302`, `x-repo-commit: 5359861c739e955e79d9a303bcbc70fb988958b1`, `x-linked-etag: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"`, `x-linked-size: 77691713`, absolute `location` on `us.aws.cdn.hf.co`. A plain `curl -fL` GET produced 77,691,713 bytes with SHA-256 `be07e048…1e21`, the `x-linked-etag`. The etag of a stored large file is its SHA-256, so every download can be verified against it.
+- **`std::fs::File::lock` (stable 1.89; toolchain 1.97.1):** "Blocks until the lock can be acquired … No other file handle to this file, in this or any other process, may acquire another lock … The lock will be released when this file … is closed". `flock(LOCK_EX)` on Unix, `LockFileEx(LOCKFILE_EXCLUSIVE_LOCK)` on Windows. The OS releases it when the process exits, including on a crash.
+- **`std::env::home_dir`:** Windows: "Returns the value of the 'USERPROFILE' environment variable if it is set … Otherwise, `GetUserProfileDirectory`"; Unix: `HOME`, else `getpwuid_r`.
+- **reqwest 0.13.5 blocking:** default features = rustls with aws-lc-rs (the TLS stack already traced in setup-dependencies.md B6). `ClientBuilder::timeout` "Default is 30 seconds … Pass `None` to disable timeout"; it wraps the request and each body `read` (`blocking/response.rs:440`). Redirects: "Default will follow redirects up to a maximum of 10"; `redirect::Policy::none()` disables them. The system proxy reads `HTTPS_PROXY` (`hyper-util` `matcher.rs:233`).
 - **whisper-rs 0.16.0 API:** `WhisperContext::new_with_params(path, WhisperContextParameters::default())`, `ctx.create_state()`, `FullParams::new(SamplingStrategy::Greedy { best_of: 1 })` with `set_language`, `set_translate`, `set_temperature`, `set_temperature_inc`, `set_no_context`, `set_token_timestamps`, `set_print_*`; `state.full(params, &[f32])` (16 kHz mono); `state.as_iter()` → `WhisperSegment` (`start_timestamp`/`end_timestamp` in centiseconds, `no_speech_probability`, `to_str_lossy`, `n_tokens`, `get_token`); `WhisperToken::token_data()` → `{ id, p, t0, t1, … }` (centiseconds), `to_bytes()`; `state.full_lang_id_from_state()`; `get_lang_id(code) -> Option<i32>`; `ctx.token_eot()`, `ctx.token_lang(id)`, `ctx.token_translate()`; `WHISPER_CPP_VERSION`; `install_logging_hooks()`.
 - **Probe token output** (tiny, Arabic clip): text tokens have `id < token_eot()` (50257); `[_BEG_]` = 50364 and `[_TT_n]` ≥ 50364 are special. Example segment `200..500`: tokens `" ل" 201–225 p.213`, `"اب" 225–263`, `"ت"`, `"ح"`, `"ب"`, `" ب"`, `"لا"`, … `[_TT_250]`. `state.full_lang_id_from_state()` = 13 (`ar`).
 - **Languages:** whisper.cpp `g_lang` has 100 entries and includes `yue` (99), `sw`, `fa`, `hi`; it lacks `zu`, `xh`, `st` (the same support as the current README table). `get_lang_id("zu")` returns -1 → `None`.
@@ -126,7 +151,7 @@ Probe crate: whisper-rs 0.16.0 (`metal`) and hf-hub 1.0.0 (`blocking`), built an
 ### Model identity
 
 - `WhisperModel` = a file name in the Hugging Face repository `ggerganov/whisper.cpp` (e.g. `ggml-large-v3-turbo.bin`, `ggml-tiny.bin`). Default: `ggml-large-v3-turbo.bin` (the same model family as the current default).
-- One resolver, `fetch_model(name) -> PathBuf`, uses hf-hub to download into the HF cache, or returns the cached path (offline fallback included). It has two callers:
+- One resolver, `fetch_model(name) -> PathBuf` (`src/model_cache.rs` from Phase 2; hf-hub in Phase 1), returns the cached path, or downloads into the HF cache per "Model cache by construction" in Phase 2. It has two callers:
   - the new `download-model [MODEL]` subcommand, which prints `Model cached: <path>`;
   - `--transcribe --whisper-model MODEL`.
 - No local-directory or Python options remain (U11).
@@ -239,6 +264,28 @@ Work happens on branch `native-transcription-setup` (the repo is on `main`). Eac
 - whisper.cpp bindings are generated by bindgen on every platform; `.cargo/config.toml` goes. Why: the bundled bindings fail to compile for Windows (O2: `208_usize - 216_usize`, Size of `_IO_FILE`), and Cargo `[env]` cannot be set per target. Generated bindings build on macOS (O8) and Debian/Ubuntu with `libclang-dev` (C.4). Consequence: libclang is a build requirement everywhere (Command Line Tools / `libclang-dev` / `LLVM.LLVM`).
 - yt-dlp is always the official standalone executable, never a Python package (setup-dependencies.md "Why Python is excluded").
 
+**Model cache by construction** (user: "MAKE IT WORK BY _CONSTRUCTION_. NO MORE ARBITRARY TIMEOUT MANAGEMENT OR HOPING AND PRAYING."). hf-hub is removed; `src/model_cache.rs` implements the Hub cache specification (§2) for the one repository the app uses.
+
+`fetch_model(name)`:
+1. **Cache folder:** `HF_HUB_CACHE`, else `$HF_HOME/hub`, else `$XDG_CACHE_HOME/huggingface/hub`, else `home_dir()/.cache/huggingface/hub` (Windows: `%USERPROFILE%\.cache\huggingface\hub`). A pure function of the variables and the home folder.
+2. **Cached:** if `refs/main` names commit C and `snapshots/C/<name>` exists, return it. No network request, nothing copied.
+3. **Describe:** `HEAD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/<name>` without following redirects. A status that is neither success nor redirection is an error (e.g. 404 for `ggml-nope.bin`). `x-repo-commit` gives the commit; `x-linked-etag` (quotes removed) gives the etag, which is the file's SHA-256. A missing header is an error.
+4. **Lock:** `File::lock` on `.locks/models--ggerganov--whisper.cpp/<etag>.lock`. It blocks until free, with no time limit. hf-hub and huggingface_hub use the same lock file for the same blob, so their downloads are waited for too.
+5. **Place, under the lock,** only if `snapshots/<commit>/<name>` is still absent:
+   - Unix: if `blobs/<etag>` is absent, download into it; then symlink the snapshot to `../../blobs/<etag>`.
+   - Windows: download straight into the snapshot path. This is the spec's no-symlink mode: one copy, `blobs/` unused.
+   - Download: GET the resolve URL (redirects followed, `timeout(None)`), streamed into `blobs/<etag>.incomplete` (`File::create` truncates any earlier partial) while computing SHA-256. If the hash ≠ etag, it is an error and nothing is published. Otherwise rename to the target.
+6. Write `refs/main` = commit and return the snapshot path. The lock is released when the handle drops.
+
+Properties this construction guarantees:
+- A snapshot path exists only for a complete, SHA-256-verified file: it is created only by renaming a verified file, or by symlinking to such a blob. `refs/main` is written after it, so the lock-free check in step 2 never sees a partial file.
+- At most one process downloads a blob at a time. A waiter wakes holding the lock, finds the snapshot in step 5, and does not download again.
+- Waiting has no time limit and cannot be stranded: the OS releases the lock when the holder exits or crashes. The next holder truncates the `.incomplete` file and downloads again.
+- The app sets no timeout anywhere (`timeout(None)`). A stalled connection keeps the run waiting until the user interrupts it, and interrupting is safe by the points above.
+- A cached model needs no network. Consequence: a later re-upload of the same file name on the Hub is not fetched while the cached copy exists. Phase 1 (hf-hub) checked the Hub on every run.
+
+Callers: `transcription::load_model` and `main.rs` `DownloadModel` call `model_cache::fetch_model`; error text stays `cannot fetch Whisper model {name}: …`.
+
 **Change inventory**
 
 | File | Change | Author |
@@ -246,8 +293,15 @@ Work happens on branch `native-transcription-setup` (the repo is on `main`). Eac
 | `.cargo/config.toml` | **deleted** (user: "Ok. Delete."); deletion staged, to be committed with Phase 2 | me |
 | `setup.sh` (rewrite of the uncommitted draft) | `cd "$repo"`; PATH gets `~/.cargo/bin` and `~/.deno/bin` for this run. **Darwin:** Homebrew required; `brew install` whichever of `cargo=rust cmake=cmake ffmpeg=ffmpeg deno=deno` are missing; if `yt-dlp` is absent: `sudo mkdir -p /usr/local/bin`, `sudo curl -fL …/releases/latest/download/yt-dlp_macos -o /usr/local/bin/yt-dlp`, `sudo chmod 755`. **Linux:** requires `apt-get` and `uname -m` = `x86_64`, else exit 1 with the supported-systems message; `sudo apt-get update`; `sudo apt-get install -y --no-install-recommends ca-certificates curl unzip build-essential cmake libclang-dev ffmpeg`; `curl … sh.rustup.rs \| sh -s -- -y` if no `cargo`; `curl … deno.land/install.sh \| sh -s -- -y` if no `deno` (`-y` adds Deno to the shell configs; without a terminal the installer skips that step); `yt-dlp_linux` → `/usr/local/bin/yt-dlp` as above if absent. **Other systems:** exit 1 with the message. **All:** `cargo build`; `cargo run --quiet -- download-model`; `scripts/install-skill.sh "$HOME/.agents/skills"` and `"$HOME/.claude/skills"`. No `python` anywhere | me |
 | `setup.ps1` (rewrite of the uncommitted draft) | Throws unless `$env:PROCESSOR_ARCHITECTURE -eq 'AMD64'`. `winget install --source winget --exact --id <id> --accept-source-agreements --accept-package-agreements` (throws on a nonzero exit) for `yt-dlp.yt-dlp` if no `yt-dlp`, `Kitware.CMake` if no `cmake`, `LLVM.LLVM` if `$env:ProgramFiles\LLVM\bin\libclang.dll` is absent; rustup-init (`win.rustup.rs/x86_64`) if no `cargo`; refresh PATH (Machine + User + `~\.cargo\bin`); `cargo build`; `cargo run --quiet -- download-model`; skill junctions in both dirs (refuse to replace a different target) | me |
-| `README.md` | Keep the rewritten README (sections: what it does; Setup; Command-line usage; Format files; Guided listening skill; Languages; Validation status; Design and research; Development checks). Rewrite the Setup section from table E: supported systems; what each script installs, including libclang and `/usr/local/bin/yt-dlp`; manual equivalents; unsupported systems stop with a message. Remove "`setup.ps1` has not yet been run on a Windows machine" once CI runs it | me |
+| `README.md` | Keep the rewritten README (sections: what it does; Setup; Command-line usage; Format files; Guided listening skill; Languages; Validation status; Design and research; Development checks). Rewrite the Setup section from table E: supported systems; what each script installs, including libclang and `/usr/local/bin/yt-dlp`; manual equivalents; unsupported systems stop with a message. Remove "`setup.ps1` has not yet been run on a Windows machine" once CI runs it. Model cache text (Setup step 2 and "Transcribe source audio"): cache folder including Windows `%USERPROFILE%\.cache\huggingface\hub`; a run needing a model another run is downloading waits for it and uses it; a cached model is used with no network | me |
 | `.github/workflows/setup.yml` (create) | Trigger: `push` to `native-transcription-setup`, and `workflow_dispatch`. **macos** (`macos-15`): `./setup.sh`, `cargo test`, `cargo run -- tests/fixtures/jfk.wav --language en --transcribe --output jfk.txt`. **linux** (`ubuntu-24.04`, matrix `ubuntu:24.04`, `debian:12`): in a fresh container, as a non-root user with passwordless sudo, `./setup.sh`, `command -v python3` must fail, then `cargo test` and the jfk transcription. **windows** (`windows-2025`): Microsoft's documented winget bootstrap (`Install-Module Microsoft.WinGet.Client -Force`, `Repair-WinGetPackageManager -AllUsers`; the runner image lists no winget), `./setup.ps1`, `cargo test`, the jfk transcription. Each job also runs `yt-dlp --version` and `deno --version` | me |
+| `Cargo.toml` | remove `hf-hub`; add `reqwest = { version = "0.13", features = ["blocking"] }` (default features: rustls + aws-lc-rs, as before) | me |
+| `src/model_cache.rs` (create) | "Model cache by construction": `fetch_model`, `cache_dir_from` (pure), cached lookup, HEAD description, lock, place (Unix/Windows), verified download, ref write; unit test for `cache_dir_from` order | me |
+| `src/transcription.rs` | remove `fetch_model` and the `hf_hub` import; `load_model` calls `model_cache::fetch_model` | me |
+| `src/main.rs` | `mod model_cache`; `DownloadModel` calls `model_cache::fetch_model` | me |
+| `tests/transcription.rs` | add `concurrent_downloads_into_a_fresh_cache_download_once`: 4 simultaneous `download-model ggml-tiny.bin` with `HF_HUB_CACHE` = a new temp folder; all exit 0 and print the same path under it; that file's SHA-256 = `be07e048…1e21`; the folder holds exactly one 77,691,713-byte file (symlinks not followed) and no `.incomplete`. Add `cached_model_is_used_without_network`: after `download-model ggml-tiny.bin`, with `HTTPS_PROXY`/`HTTP_PROXY` = `http://127.0.0.1:9`, `download-model ggml-nope.bin` fails with "cannot fetch Whisper model" (the network is blocked) and the jfk transcription with `ggml-tiny.bin` succeeds | me |
+| `design/transcription-and-metadata.md` (untracked user draft) | replace the hf-hub `fetch_model` excerpt with `model_cache::fetch_model` | me |
+| `docs/current-plans/setup-dependencies.md` | B6 source: reqwest (model download); R4: the model-cache construction, Windows `%USERPROFILE%` folder and one copy | me |
 | `docs/current-plans/NATIVE_TRANSCRIPTION_IMPLEMENTATION_STATUS.md` | Phase 2 results | me |
 
 **Dependencies:** Phase 1 (`download-model`, native transcription). Pushing the branch to `origin` (github.com/nomicflux/language-jutsu) is authorized by the GitHub Actions answer: "Publishes the branch and adds a CI file."
@@ -259,7 +313,8 @@ Work happens on branch `native-transcription-setup` (the repo is on `main`). Eac
   - `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, all with generated bindings after the deletion.
   - `./setup.sh`, with the output recorded. `brew list` before and after shows no new Python formula. The model is under `~/.cache/huggingface/hub/models--ggerganov--whisper.cpp`; both skill links exist.
   - Every README CLI example, run as written in a scratch copy.
-- CI: all four jobs (macos, linux × 2, windows) green, with each run URL and its key log lines (setup completion, `Model cached:`, the test result lines, the transcription output, the `python3` check on Linux) recorded in the status file.
+- CI: all four jobs (macos, linux × 2, windows) green, with each run URL and its key log lines (setup completion, `Model cached:`, the test result lines, the transcription output, the `python3` check on Linux) recorded in the status file. On Windows, `Model cached:` must be under `C:\Users\runneradmin\.cache\huggingface\hub`.
+- `cargo tree -i aws-lc-sys` still resolves (TLS stack unchanged); `cargo tree -i hf-hub` finds nothing.
 - YouTube URL runs are verified locally on the Mac (done earlier and repeated in the README examples). YouTube URL runs from GitHub's datacenter runners are not part of the CI gate, because YouTube may demand sign-in from those addresses; CI verifies that `yt-dlp` and `deno` are installed and on PATH.
 
 **Boundary state:** a new user on macOS (Homebrew), Debian/Ubuntu x86_64 or Windows x64 runs one script and has a working CLI, model and skill, with no Python installed by setup. Other systems get a message naming the supported ones. CI proves each target on every push.

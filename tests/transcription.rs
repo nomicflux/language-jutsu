@@ -1,10 +1,20 @@
-use std::{fs, path::PathBuf, process::Command};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Output, Stdio},
+};
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 // Real whisper.cpp with the smallest multilingual model; fetched once into the HF cache.
 const MODEL: &str = "ggml-tiny.bin";
+// The Hub's x-linked-etag and x-linked-size for ggml-tiny.bin.
+const MODEL_SHA256: &str = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21";
+const MODEL_BYTES: u64 = 77_691_713;
+// Nothing listens here, so every request through this proxy fails.
+const DEAD_PROXY: &str = "http://127.0.0.1:9";
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -24,19 +34,7 @@ impl Run {
     }
 
     fn in_dir(dir: TempDir, input: &str, language: &str, model: &str, window: &[&str]) -> Self {
-        // There is no format file or --format: transcription is standalone.
-        let result = Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
-            .arg(fixture(input))
-            .args([
-                "--language",
-                language,
-                "--transcribe",
-                "--whisper-model",
-                model,
-            ])
-            .args(window)
-            .arg("--output")
-            .arg(dir.path().join("transcript.txt"))
+        let result = transcribe(&dir, input, language, model, window)
             .output()
             .unwrap();
         Self { dir, result }
@@ -56,6 +54,59 @@ impl Run {
         assert!(!self.dir.path().join("transcript.txt").exists());
         assert!(!self.dir.path().join("transcript.txt.json").exists());
     }
+}
+
+fn transcribe(dir: &TempDir, input: &str, language: &str, model: &str, window: &[&str]) -> Command {
+    // There is no format file or --format: transcription is standalone.
+    let mut command = Command::new(env!("CARGO_BIN_EXE_language-jutsu"));
+    command
+        .arg(fixture(input))
+        .args([
+            "--language",
+            language,
+            "--transcribe",
+            "--whisper-model",
+            model,
+        ])
+        .args(window)
+        .arg("--output")
+        .arg(dir.path().join("transcript.txt"));
+    command
+}
+
+fn download_model(model: &str) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_language-jutsu"));
+    command.args(["download-model", model]);
+    command
+}
+
+fn without_network(command: &mut Command) -> &mut Command {
+    command
+        .env("HTTPS_PROXY", DEAD_PROXY)
+        .env("HTTP_PROXY", DEAD_PROXY)
+}
+
+/// The path a successful `download-model` printed.
+fn cached_path(result: Output) -> PathBuf {
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(result.status.success(), "{stderr}");
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    PathBuf::from(stdout.trim().strip_prefix("Model cached: ").unwrap())
+}
+
+/// Every regular file under `dir` with its size; symlinks are not followed.
+fn files(dir: &Path) -> Vec<(PathBuf, u64)> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        if metadata.is_dir() {
+            found.extend(files(&path));
+        } else if metadata.is_file() {
+            found.push((path, metadata.len()));
+        }
+    }
+    found
 }
 
 fn words(json: &Value) -> Vec<(String, f64)> {
@@ -202,17 +253,55 @@ fn existing_text_or_sidecar_is_never_replaced() {
 
 #[test]
 fn download_model_caches_the_file_in_the_hugging_face_cache() {
-    let result = Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
-        .args(["download-model", MODEL])
+    let path = cached_path(download_model(MODEL).output().unwrap());
+    let shown = path.display().to_string();
+    assert!(shown.contains("models--ggerganov--whisper.cpp"), "{shown}");
+    assert!(path.is_file());
+}
+
+#[test]
+fn concurrent_downloads_into_a_fresh_cache_download_once() {
+    let cache = tempfile::tempdir().unwrap();
+    let children: Vec<_> = (0..4)
+        .map(|_| {
+            download_model(MODEL)
+                .env("HF_HUB_CACHE", cache.path())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    let paths: Vec<PathBuf> = children
+        .into_iter()
+        .map(|child| cached_path(child.wait_with_output().unwrap()))
+        .collect();
+    assert!(paths.iter().all(|path| *path == paths[0]), "{paths:?}");
+    assert!(paths[0].starts_with(cache.path()), "{paths:?}");
+    let digest = Sha256::digest(fs::read(&paths[0]).unwrap());
+    assert_eq!(format!("{digest:x}"), MODEL_SHA256);
+    let stored = files(cache.path());
+    let copies = stored.iter().filter(|(_, size)| *size == MODEL_BYTES);
+    assert_eq!(copies.count(), 1, "{stored:?}");
+    let partial = |path: &PathBuf| path.extension().is_some_and(|ext| ext == "incomplete");
+    assert!(!stored.iter().any(|(path, _)| partial(path)), "{stored:?}");
+}
+
+#[test]
+fn cached_model_is_used_without_network() {
+    cached_path(download_model(MODEL).output().unwrap());
+    let empty = tempfile::tempdir().unwrap();
+    let uncached = without_network(download_model(MODEL).env("HF_HUB_CACHE", empty.path()))
         .output()
         .unwrap();
-    let stdout = String::from_utf8(result.stdout).unwrap();
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    let path = stdout.trim().strip_prefix("Model cached: ").unwrap();
-    assert!(path.contains("models--ggerganov--whisper.cpp"), "{path}");
-    assert!(PathBuf::from(path).is_file());
+    let stderr = String::from_utf8_lossy(&uncached.stderr);
+    assert!(!uncached.status.success(), "the network was reachable");
+    assert!(stderr.contains("cannot fetch Whisper model"), "{stderr}");
+    let dir = tempfile::tempdir().unwrap();
+    let result = without_network(&mut transcribe(&dir, "jfk.wav", "en", MODEL, &[]))
+        .output()
+        .unwrap();
+    let json = Run { dir, result }.metadata();
+    let text = json["text"].as_str().unwrap();
+    assert!(text.contains("ask not what your country"), "{text}");
 }

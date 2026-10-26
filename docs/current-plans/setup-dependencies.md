@@ -39,12 +39,12 @@ Traced from `Cargo.lock` / `cargo tree -e normal,build --target <t>` (identical 
 | B3 | CMake | whisper-rs-sys builds whisper.cpp with the `cmake` crate | — |
 | B4 | whisper.cpp Rust bindings | whisper-rs-sys: bundled `src/bindings.rs` when `WHISPER_DONT_GENERATE_BINDINGS` is set (`.cargo/config.toml`), else bindgen (needs libclang) | per platform below |
 | B5 | ggml CPU code generation | whisper.cpp CPU backend; `GGML_NATIVE` detection | per compiler below |
-| B6 | TLS crypto (aws-lc-sys 0.46, `prebuilt-nasm`) | hf-hub → reqwest → rustls → aws-lc-rs (model download) | C compiler; Windows ARM64: clang-cl |
+| B6 | TLS crypto (aws-lc-sys 0.46, `prebuilt-nasm`) | reqwest 0.13 → rustls → aws-lc-rs (model download, `src/model_cache.rs`) | C compiler; Windows ARM64: clang-cl |
 | B7 | Metal | `whisper-rs` `metal` feature on macOS | Xcode Command Line Tools |
 | R1 | `ffmpeg`, `ffprobe` on PATH | decode, render, transcription resample (`src/media.rs`, `src/render.rs`, `src/transcription.rs`) | options used: `-ac -af -ar -c:a -channel_layout -dn -f -i -map -nostdin -of -q:a -select_streams -show_streams -sn -v -vn -xerror -y`, `libmp3lame` |
 | R2 | `yt-dlp` on PATH | `--url` (`src/source.rs:236`) | yt-dlp-ejs + a JS runtime |
 | R3 | JS runtime | yt-dlp's YouTube extraction | app passes `--js-runtimes node`; yt-dlp docs: "Only "deno" is enabled by default", `--js-runtimes` = "Additional JavaScript runtime to enable" → Deno ≥ 2.3.0 or Node ≥ 22.0.0 ([EJS wiki](https://github.com/yt-dlp/yt-dlp/wiki/EJS)) |
-| R4 | Whisper model in HF cache | `download-model`, `--transcribe` (hf-hub 1.0, `ggerganov/whisper.cpp`) | network once; cache layout uses symlinks |
+| R4 | Whisper model in HF cache | `download-model`, `--transcribe` (`src/model_cache.rs`, `ggerganov/whisper.cpp`) | network only until cached; Hub cache layout (symlinks on Unix, single copy in `snapshots/` on Windows) |
 | R5 | Skill links | `~/.agents/skills`, `~/.claude/skills` | symlink (Unix), junction (Windows) |
 | S1 | Setup-time fetch tools | rustup, Deno installer, yt-dlp download | `curl`, `unzip` (Deno installer: "either unzip or 7z is required") |
 
@@ -142,9 +142,9 @@ Official standalone executables bundle the interpreter and yt-dlp-ejs: "The stan
 
 | Platform | Evidence |
 |---|---|
-| Mac | `download-model` cached `ggml-large-v3-turbo.bin` (Phase 1, setup runs) |
-| Linux | same hf-hub Unix path as Mac; run verified in CI (`Model cached:` line) |
-| Win | No symlink permission needed: hf-hub 1.0.0 `cache/storage.rs:60` "On Windows, copies the blob instead of creating a symlink"; lines 88–90 `#[cfg(windows)] … std::fs::copy`. The snapshot is a copy of the blob, so the model occupies twice its size on disk. Runtime CAN'T VERIFY HERE |
+| Mac | `src/model_cache.rs` writes the Hub layout (`blobs/<etag>`, `snapshots/<commit>/<file> -> ../../blobs/<etag>`, `refs/main`, `.locks/…/<etag>.lock`), checked on a scratch cache 2026-10-26; cached lookup ran with `HTTPS_PROXY` blocked; 4 simultaneous downloads into a fresh cache: one file, SHA-256 = etag (test) |
+| Linux | same Unix code path as Mac; verified in CI (`Model cached:` line, the model-cache tests) |
+| Win | Folder: `std::env::home_dir()` = `USERPROFILE` → `%USERPROFILE%\.cache\huggingface\hub` (hf-hub used `HOME`, else `/tmp`: CI run 40376744569 cached at `/tmp/.cache/huggingface\hub`). No symlinks: the verified download is renamed straight into `snapshots/<commit>/<file>` (Hub spec Windows mode), one copy. Lock: `LockFileEx` via `File::lock`. Verified in CI: `Model cached:` path and the model-cache tests |
 
 ### R5 Skill links
 

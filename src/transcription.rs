@@ -7,7 +7,6 @@ use std::{
     process::{Child, Command, Stdio},
 };
 
-use hf_hub::HFClientSync;
 use serde::Serialize;
 use tempfile::NamedTempFile;
 use whisper_rs::{
@@ -88,16 +87,6 @@ struct Document<'a> {
     transcript: Transcript,
 }
 
-/// Downloads a model file into the Hugging Face cache, or returns the cached copy.
-pub(crate) fn fetch_model(name: &str) -> Result<PathBuf, Box<dyn Error>> {
-    HFClientSync::new()?
-        .model("ggerganov", "whisper.cpp")
-        .download_file()
-        .filename(name)
-        .send()
-        .map_err(|error| format!("cannot fetch Whisper model {name}: {error}").into())
-}
-
 pub(crate) fn publish(
     decoded: &DecodedAudio,
     language: &str,
@@ -135,7 +124,7 @@ fn load_model(
     language: &str,
     language_id: i32,
 ) -> Result<WhisperContext, Box<dyn Error>> {
-    let path = fetch_model(name)?;
+    let path = crate::model_cache::fetch_model(name)?;
     whisper_rs::install_logging_hooks();
     let context = WhisperContext::new_with_params(&path, WhisperContextParameters::default())?;
     // Language tokens precede the translate token; smaller models lack later languages.

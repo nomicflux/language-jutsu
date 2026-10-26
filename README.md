@@ -39,7 +39,7 @@ Installs with winget: `yt-dlp.yt-dlp` if `yt-dlp` is missing (its package also i
 ### What every setup does
 
 1. Builds the CLI with `cargo build`.
-2. Runs `cargo run -- download-model`, which downloads the default Whisper model (`ggml-large-v3-turbo.bin`, about 1.5 GiB) into the standard Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME/hub`). Nothing is stored in the repository.
+2. Runs `cargo run -- download-model`, which downloads the default Whisper model (`ggml-large-v3-turbo.bin`, about 1.5 GiB) into the standard Hugging Face cache: `~/.cache/huggingface/hub` (on Windows `%USERPROFILE%\.cache\huggingface\hub`), or `$HF_HUB_CACHE`, or `$HF_HOME/hub`. Nothing is stored in the repository.
 3. Links the listening skill into `~/.agents/skills` (Codex) and `~/.claude/skills` (Claude Code). An existing different installation is never replaced.
 
 No setup step installs Python.
@@ -213,7 +213,7 @@ cargo run -- --url 'https://youtu.be/mK-xzqnJmSQ' \
   --transcribe --output youtube-transcript.txt
 ```
 
-`download-model` fetches `ggml-large-v3-turbo.bin` unless another model file is named, for example `cargo run -- download-model ggml-small.bin`. `--whisper-model` selects the model file for transcription and has the same default; a model not yet cached is downloaded on first use, and a cached model works offline. No playback format is loaded or accepted for transcription. File and YouTube inputs, source retention, and original-timeline windows work in this mode.
+`download-model` fetches `ggml-large-v3-turbo.bin` unless another model file is named, for example `cargo run -- download-model ggml-small.bin`. `--whisper-model` selects the model file for transcription and has the same default; a model not yet cached is downloaded on first use. A cached model is used without any network access. A run that needs a model another run is downloading waits for that download and then uses it. Downloads are checked against the file's SHA-256 published by Hugging Face before they enter the cache. On Windows the cache holds one copy of each model (Hugging Face's layout without symlinks). No playback format is loaded or accepted for transcription. File and YouTube inputs, source retention, and original-timeline windows work in this mode.
 
 The outputs are `transcript.txt` and `transcript.txt.json`. JSON includes source provenance, requested language/dialect, model and whisper.cpp version, decoding settings, text, segments with `no_speech_prob`, and words with probabilities. Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. Transcription always transcribes, never translates into English. Use a language code supported by Whisper; an unsupported code, or a language the chosen model lacks, fails explicitly. A dialect label is metadata, not a promise of model dialect accuracy. Transcripts do not establish speaker identities or correct answers for tutoring.
 

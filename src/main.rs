@@ -5,6 +5,7 @@ mod format;
 mod formula;
 mod media;
 mod metadata;
+mod model_cache;
 mod render;
 mod segmentation;
 mod sequence;
@@ -31,7 +32,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
     match args.command.take() {
         Some(cli::Command::Anki { input, output }) => anki::build(&input, &output),
         Some(cli::Command::DownloadModel { model }) => {
-            let path = transcription::fetch_model(&model)?;
+            let path = model_cache::fetch_model(&model)?;
             println!("Model cached: {}", path.display());
             Ok(())
         }
