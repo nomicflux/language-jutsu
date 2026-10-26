@@ -1,0 +1,253 @@
+# Native transcription, setup, and README
+
+## 1. User requirements and definitions — verbatim
+
+**U1** (user, 2026-10-26 12:50):
+> I want to take this repo and make it useable for others.
+>
+> 1. Go over the README. Rewrite with how to set up the app, example usage (from the command line for given files & YouTube URLs, with different formats; and also from the SKILL, with the various options users can specify.)
+> 2. Improve setup - this should work out of the box for a new user as much as possible (have a setup script for a single point of entry, along with downloads of the required transcription backends so that these do not have to be stored on Github). Update README.
+
+**U2** (user's answer to "How should the setup script handle system tools (Rust/Cargo, FFmpeg/ffprobe, yt-dlp + Deno)?"):
+> Homebrew for Mac; we need options for Windows & Linux too.
+
+**U3** (user's answer to "Where should setup install the language-jutsu-listening skill?"; selected option text: "~/.claude/skills (Claude Code) and ~/.agents/skills (Codex), via the existing install-skill.sh."):
+> Both
+
+**U4** (user's answer to "Which models should setup download?"):
+> Whichever is actually used. If the scripts are part of actual flow, include both; otherwise, just Whisper.
+
+**U5** (user's answer to "Where should the downloaded Whisper model live?"; selected option text: "Pre-download into the standard HF cache, so the CLI's existing default `--whisper-model mlx-community/whisper-large-v3-turbo` works without a flag. No settings file written."):
+> Hugging Face cache
+
+**U6** (user, 13:03):
+> If you are installing python, you done fucked up.
+
+**U7** (user, after the post mortem):
+> " Replace the transcription backend with one that doesn't need Python. " Does the existing one ACTUALLY need Python, or was that a hack in the first place.
+
+**U8** (user):
+> Native code. A C/C++ engine is not worse than a Python runtime.
+
+**U9** (user's answer to the model-fetch question; selected option text: "The binary uses the hf-hub crate to fetch the file into the standard HF cache. A new `language-jutsu download-model` subcommand lets setup pre-fetch it; --transcribe uses the cached file by default."):
+> HF cache + subcommand
+
+**U10** (user's answer to "How should transcription be tested once the fake-Python helper is gone?"; options were "1. Real tiny model — Integration tests run real whisper.cpp with ggml-tiny.bin (75 MiB, fetched once and cached), checking source-timeline mapping, outputs and no-clobber. Tests need network on first run." and "2. Pure functions only — Unit tests cover the pure parts (token-to-word grouping, timestamp mapping, document building) with no model; the whisper.cpp call itself is untested."):
+> 1 & 2
+
+**U11** (user's answer to "May I delete scripts/mlx_whisper_helper.py, tests/helpers/whisper_python.py, the --whisper-python option, and passing a local MLX model directory to --whisper-model?"):
+> Yes, delete all four
+
+**U12** (user's answer to "May I collapse that `if` [src/anki.rs:325] in Phase 1?"):
+> Yes, fix it
+
+**U13** (user, after the plan was presented; the plan's note read "your own `listening/settings.md` still names `.venv-whisper` and the MLX model folder"):
+> Remove stale setting. Proceed.
+
+### Source requirements (repository text, not the user)
+
+- **README.md:109–111 (current):** "No playback format is loaded or accepted for transcription. File and YouTube inputs, source retention, and original-timeline windows work in this mode." "Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. The helper always uses `task="transcribe"`, never English translation. Use a language code supported by Whisper; an unsupported code fails explicitly."
+- **README.md:55, 70:** "Existing output files are never replaced."
+- **skills/language-jutsu-listening/references/preparation.md:38:** "The text file has a structured `.json` companion: `text`, `language`, `segments` (with `words`), `source`, `backend`, `settings`, `timestamp_reference`, and `source_offset_seconds`. Segment/word `start` and `end` are already original-source seconds."
+- **skills/language-jutsu-listening/references/evidence.md:25:** "The existing `scripts/compare_audio.py` is an optional Qwen2-Audio comparison … Do not … set up another model as a routine lesson stage." (Basis for U4 → Whisper only.)
+- **research/technical-options.md:27:** whisper-rs/whisper.cpp "is the leading candidate **if local transcription is desired**."
+
+## 2. Investigation results
+
+### Current behavior
+
+- `src/transcription.rs` embeds `scripts/mlx_whisper_helper.py` (`include_str!`, line 14). `publish` checks that neither output exists, converts the selected PCM to WAV with ffmpeg, runs `Command::new(&options.python).args(["-c", HELPER])` (line 110), validates the helper's JSON response, shifts timestamps by `selected_range.start_frame / sample_rate`, and persists `transcript.txt` and `transcript.txt.json` without clobbering.
+- `src/cli.rs`: `--whisper-python` (default `python3`) and `--whisper-model` (default `mlx-community/whisper-large-v3-turbo`) build `transcription::Options { python, model }`. `Command` has a single subcommand, `Anki`.
+- `src/main.rs` dispatches `Command::Anki` with `if let`; otherwise `app::run`.
+- `src/app.rs:15–23`: the transcription branch acquires the source, decodes the window, and calls `transcription::publish`, before any format is loaded.
+- `tests/transcription.rs` (`#![cfg(unix)]`) drives the CLI with a fake Python interpreter (`tests/helpers/whisper_python.py`): language-name round trip for 9 languages, timeline mapping, 5 helper failure modes, and no-clobber.
+- Python references outside transcription: `skills/.../scripts/compare_audio.py` and its uses in `evidence.md` and `boundaries.md:105+` (the optional Qwen comparison, untouched per U4). `SKILL.md:94` tells the skill to store "Python and model paths". `preparation.md:3,17,29,34` uses `$whisper_python`. `boundaries.md:5` and `design/transcription-and-metadata.md` describe the "Rust/Python transcription bridge".
+
+### Baseline (2026-10-26, `main` at e3a6e04 plus untracked files)
+
+- `cargo fmt --check` → exit 0.
+- `cargo test` → 68 passed (1 + 2 + 57 + 4 + 4), 0 failed.
+- `cargo clippy --all-targets -- -D warnings` → **exit 101**: `src/anki.rs:325` `clippy::collapsible_if` (fixed in Phase 1 per U12).
+
+### External facts established (docs, source, probes)
+
+Probe crate: whisper-rs 0.16.0 (`metal`) and hf-hub 1.0.0 (`blocking`), built and run on this Mac (Apple M3 Pro).
+
+- **hf-hub 1.0.0 blocking download:** `HFClientSync::new()?.model("ggerganov", "whisper.cpp").download_file().filename(name).send()? -> PathBuf`. The probe fetched `ggml-tiny.bin` to `~/.cache/huggingface/hub/models--ggerganov--whisper.cpp/snapshots/5359861c…/ggml-tiny.bin` (the standard HF cache layout). `HF_HUB_CACHE` → `$HF_HOME/hub` → `~/.cache/huggingface/hub`.
+- **Offline:** `download.rs:424`: a transient network error falls back to the cache. Probe run with `HF_ENDPOINT=http://127.0.0.1:9` resolved the cached file and transcribed (exit 0).
+- **whisper-rs 0.16.0 API:** `WhisperContext::new_with_params(path, WhisperContextParameters::default())`, `ctx.create_state()`, `FullParams::new(SamplingStrategy::Greedy { best_of: 1 })` with `set_language`, `set_translate`, `set_temperature`, `set_temperature_inc`, `set_no_context`, `set_token_timestamps`, `set_print_*`; `state.full(params, &[f32])` (16 kHz mono); `state.as_iter()` → `WhisperSegment` (`start_timestamp`/`end_timestamp` in centiseconds, `no_speech_probability`, `to_str_lossy`, `n_tokens`, `get_token`); `WhisperToken::token_data()` → `{ id, p, t0, t1, … }` (centiseconds), `to_bytes()`; `state.full_lang_id_from_state()`; `get_lang_id(code) -> Option<i32>`; `ctx.token_eot()`, `ctx.token_lang(id)`, `ctx.token_translate()`; `WHISPER_CPP_VERSION`; `install_logging_hooks()`.
+- **Probe token output** (tiny, Arabic clip): text tokens have `id < token_eot()` (50257); `[_BEG_]` = 50364 and `[_TT_n]` ≥ 50364 are special. Example segment `200..500`: tokens `" ل" 201–225 p.213`, `"اب" 225–263`, `"ت"`, `"ح"`, `"ب"`, `" ب"`, `"لا"`, … `[_TT_250]`. `state.full_lang_id_from_state()` = 13 (`ar`).
+- **Languages:** whisper.cpp `g_lang` has 100 entries and includes `yue` (99), `sw`, `fa`, `hi`; it lacks `zu`, `xh`, `st` (the same support as the current README table). `get_lang_id("zu")` returns -1 → `None`.
+- **Language vs loaded model:** `whisper_token_lang = token_sot + 1 + lang_id` (`whisper.cpp:4234`); language tokens sit below `token_translate`. Tiny has `n_langs = 99` (probe log), so `token_lang(99) = token_translate`. Rule: a loaded model supports `id` iff `ctx.token_lang(id) < ctx.token_translate()`.
+- **mlx-whisper word rule being replaced** (`tokenizer.py:279–320`, `timing.py:173–181`): split tokens at points where the decoded bytes are complete Unicode; for `zh, ja, th, lo, my, yue` each such piece is a word; otherwise a piece starting with a space (or the first piece) starts a new word and other pieces join the current word. Word probability = mean of token probabilities.
+- **Build:**
+  - The probe built with Metal using cmake (Homebrew) and Xcode Command Line Tools clang; no `.cargo/config` rustflags were needed.
+  - whisper-rs BUILDING.md: Linux needs cmake + a C/C++ toolchain (plus clang for bindgen); Windows MSVC needs Visual Studio C++, CMake, and LLVM/`LIBCLANG_PATH` for bindgen.
+  - `WHISPER_DONT_GENERATE_BINDINGS` (`build.rs:119`) copies the bundled bindings instead of running bindgen. Without libclang, bindgen panics (`bindgen-0.72.1/lib.rs:616`).
+  - Probe built with `WHISPER_DONT_GENERATE_BINDINGS=1` and Metal, and ran correctly.
+  - With `[env] WHISPER_DONT_GENERATE_BINDINGS = "1"` in the crate's `.cargo/config.toml`, a later `cargo build --manifest-path` from `/` did not rebuild (`Finished … in 0.31s`); whisper-rs-sys has no `rerun-if-env-changed` for that variable.
+- **Debug builds:** cmake-rs maps opt-level 0 to `CMAKE_BUILD_TYPE=Debug` (`cmake-0.1.58/src/lib.rs:146–176`). The skill and README use `cargo run` (dev profile), so whisper.cpp would be an unoptimized build. `[profile.dev.package.whisper-rs-sys] opt-level = 3` gives `RelWithDebInfo` (`build.rs:270`).
+- **Logging:** whisper.cpp writes ~60 diagnostic lines to stderr per run (probe `run.err`). `install_logging_hooks()` without the `log_backend`/`tracing_backend` features routes them to a no-op (`whisper_logging_hook.rs`); failures still return `WhisperError`.
+- **Setup sources:**
+  - yt-dlp: the official PyInstaller standalone `yt-dlp_linux` bundles EJS (yt-dlp EJS wiki) and resolves (HTTP 200 at `releases/latest/download/yt-dlp_linux`); it needs no Python.
+  - Windows: winget `yt-dlp.yt-dlp` x64/arm64 is the official `yt-dlp.exe` and depends on `DenoLand.Deno` and `yt-dlp.FFmpeg`, which provides `ffmpeg`/`ffprobe`. winget has `Kitware.CMake`.
+  - Rust: rustup-init.exe (`https://win.rustup.rs/{x86_64|aarch64}`) offers to install the Visual Studio C++ prerequisites. Unix: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
+  - Deno: `curl -fsSL https://deno.land/install.sh | sh` (needs `unzip`).
+  - Homebrew: the `yt-dlp` formula depends on `deno`.
+
+## 3. Data model and behavior
+
+### Model identity
+
+- `WhisperModel` = a file name in the Hugging Face repository `ggerganov/whisper.cpp` (e.g. `ggml-large-v3-turbo.bin`, `ggml-tiny.bin`). Default: `ggml-large-v3-turbo.bin` (the same model family as the current default).
+- One resolver, `fetch_model(name) -> PathBuf`, uses hf-hub to download into the HF cache, or returns the cached path (offline fallback included). It has two callers:
+  - the new `download-model [MODEL]` subcommand, which prints `Model cached: <path>`;
+  - `--transcribe --whisper-model MODEL`.
+- No local-directory or Python options remain (U11).
+
+### Transcription pipeline (`--transcribe`)
+
+1. Fail if `OUTPUT` or `OUTPUT.json` exists (unchanged; nothing is fetched or replaced).
+2. Language: `get_lang_id(code)` is `None` → error "Whisper does not support language code {code}".
+3. `fetch_model(name)`, load the `WhisperContext` (logging hooks installed). If `token_lang(id) >= token_translate()` → error "{model} does not support language {code}".
+4. Audio: ffmpeg converts the selected window's f32le PCM (source rate and channels) to 16 kHz mono f32le, writing to a temp file (as today, to avoid pipe deadlock), then reads it into `Vec<f32>`.
+5. Run `full` with: language `code`, translate `false`, temperature `0.0`, temperature_inc `0.0` (no fallback), no_context `true`, token timestamps `true`, Greedy `best_of: 1`, all `print_*` false, no initial prompt.
+6. Check `full_lang_id_from_state() == id`, else "whisper.cpp returned unexpected language".
+7. Collect segments. Text pieces are tokens with `id < token_eot()`, as `Piece { bytes, start_cs, end_cs, probability }`. `words(&pieces, code)` applies the mlx-whisper rule above, with word `start` = first piece `t0`/100, `end` = last piece `t1`/100, and `probability` = mean.
+8. `map_timestamps` (unchanged pure function): finite values, `0 ≤ start ≤ end`, probability in `[0, 1]`, plus offset.
+9. Write the document; persistence is unchanged (no-clobber; text removed if the sidecar fails).
+
+### Saved document shape
+
+The top-level shape is unchanged (preparation.md:38 fields retained):
+
+```text
+Document { source, backend, settings, timestamp_reference: "original_source_seconds",
+           source_offset_seconds, text, language, segments }
+Backend  { name: "whisper.cpp", version: WHISPER_CPP_VERSION, model: <file name> }
+Settings { language, task: "transcribe", word_timestamps: true, temperature: 0.0,
+           condition_on_previous_text: false, initial_prompt: null }
+Segment  { id, start, end, text, words: [Word], no_speech_prob }
+Word     { word, start, end, probability }
+```
+
+**Information change:** `Segment.temperature`, `avg_logprob`, and `compression_ratio` are no longer written; whisper.cpp does not report them. No reader in the app or skill consumes them (preparation.md:38 lists the consumed fields). Existing saved transcripts are untouched.
+
+### Worked cases
+
+| # | Start | Operation | Result | Governing |
+|---|---|---|---|---|
+| 1 | Fresh Mac with Homebrew, no Python change | `./setup.sh` | brew installs missing `rust cmake ffmpeg yt-dlp deno`; build; `download-model` puts `ggml-large-v3-turbo.bin` in `~/.cache/huggingface/hub`; skill linked in `~/.agents/skills` and `~/.claude/skills`; nothing Python-related installed | U1.2, U2, U3, U5, U6, U9 |
+| 2 | After case 1, offline | `cargo run -- rec.mp3 --language ja --start 0.3 --end 20.3 --transcribe --output t.txt` | model resolved from cache; `t.txt` + `t.txt.json`, times in original-source seconds (offset 0.3) | U8, U9, README:111 |
+| 3 | Any | `--language zulu --transcribe` | error "Whisper does not support language code zu"; no outputs; no download | README:111 |
+| 4 | Tiny model | `--language cantonese --whisper-model ggml-tiny.bin --transcribe` | error "ggml-tiny.bin does not support language yue"; no outputs | README:111 |
+| 5 | Any | `--whisper-model ggml-nope.bin --transcribe` | hf-hub not-found error; no outputs | README:111 |
+| 6 | `t.txt` exists | `--transcribe --output t.txt` | "already exists"; nothing replaced or downloaded | README:55 |
+| 7 | Arabic pieces `" ل" "اب" "ت" "ح" "ب" " ب" "لا"` | `words(…, "ar")` | `" لابتحب"` (start = t0 of `" ل"`, end = t1 of `"ب"`, p = mean of 5), `" بلا"` | mlx rule (preserved behavior) |
+| 8 | Japanese pieces where one character's UTF-8 bytes span two tokens | `words(…, "ja")` | those two tokens form one word; every complete character group is its own word | mlx rule |
+| 9 | Fresh Debian/Ubuntu | `./setup.sh` | apt installs missing `ffmpeg build-essential cmake unzip`; rustup, Deno installer, `yt-dlp_linux` → `~/.local/bin/yt-dlp`; build; download; skills; no Python installed; transcription runs on CPU | U2, U6, U8 |
+| 10 | Windows | `setup.ps1` | winget `yt-dlp.yt-dlp` (+Deno, FFmpeg), `Kitware.CMake`; rustup-init (offers VS C++); build; download; skill junctions in both dirs | U2, U3 |
+
+## 4. Phases
+
+Work happens on branch `native-transcription-setup` (the repo is on `main`). Each phase commits only its intended files; the untracked media, `listening/`, and design drafts stay uncommitted unless listed.
+
+### Phase 1 — Native transcription
+
+**Outcome:** `--transcribe` runs whisper.cpp inside the binary; `download-model` pre-fetches models into the HF cache; no Python anywhere in the transcription path; docs that describe transcription match.
+
+**Change inventory**
+
+| File | Change | Author |
+|---|---|---|
+| `Cargo.toml` | add `whisper-rs = "0.16"`, `hf-hub = { version = "1", features = ["blocking"] }`; `[target.'cfg(target_os = "macos")'.dependencies] whisper-rs = { version = "0.16", features = ["metal"] }`; `[profile.dev.package.whisper-rs-sys] opt-level = 3` | me |
+| `.cargo/config.toml` (create) | `[env] WHISPER_DONT_GENERATE_BINDINGS = "1"` | me |
+| `src/transcription.rs` | replace the helper bridge with the pipeline in §3. `Options { model }` (python removed). New: `DEFAULT_MODEL`, `fetch_model`, model/language checks, 16 kHz conversion (replaces `selected_wav`), whisper run, piece collection, `words`, segment building. Keep `map_timestamps`; split `publish` under 20 lines. Remove `HELPER`, `HelperRequest`, `HelperResponse`, `validate_response`. `#[cfg(test)] mod tests` covers the pure functions | me |
+| `src/cli.rs` | remove `whisper_python`; `--whisper-model` doc and default `DEFAULT_MODEL`; add `Command::DownloadModel { model }` with default `DEFAULT_MODEL` | me |
+| `src/main.rs` | `match` on `Command::Anki` / `Command::DownloadModel` | me |
+| `src/anki.rs:325` | collapse nested `if` (U12) | me |
+| `scripts/mlx_whisper_helper.py` | delete (U11) | me |
+| `tests/helpers/whisper_python.py` | delete (U11) | me |
+| `tests/transcription.rs` | rewrite against real `ggml-tiny.bin`; drop `#![cfg(unix)]` | me |
+| `README.md` "Transcribe source audio" + languages column header | describe whisper.cpp, `download-model`, `--whisper-model` file names; remove Python setup (full rewrite in Phase 2) | me |
+| `skills/.../SKILL.md:94` | "Python and model paths" → "model" | me |
+| `skills/.../references/preparation.md:3,17,29,34` | remove `whisper_python`; `whisper_model` is a model file name; replace the MLX/Python paragraph with whisper.cpp + `download-model` | me |
+| `skills/.../references/boundaries.md:5` | "Rust/Python transcription bridge" → native transcription | me |
+| `design/transcription-and-metadata.md` | replace helper request/response excerpts with the native pipeline and the new Segment/Backend shapes | me |
+| `listening/settings.md` (untracked user data) | U13: remove the Whisper Python and MLX Whisper model entries and `mlx-whisper 0.4.3` from Runtime; keep the `.venv-whisper` Python as the audio-comparison Python (compare_audio.py uses it) | me (done before Phase 1) |
+
+**Verification**
+
+- Unit tests (`src/transcription.rs`):
+  - `words`: case 7; case 8 using real multibyte splits (e.g. `"お"` = `E3 81 8A` split across two pieces); a space-language first piece without a leading space; probability mean.
+  - `map_timestamps`: offset applied; negative or reversed rejected; probability > 1 rejected.
+  - Centisecond conversion.
+- Integration tests (`tests/transcription.rs`, real `ggml-tiny.bin`, synthetic 16 kHz ramp, window `0.10001–0.40001`):
+  - (a) Success: both outputs exist; `timestamp_reference`; `source_offset_seconds == 1601/16000`; every segment and word time within `[offset, offset + 0.3]`; `backend.name == "whisper.cpp"`; `backend.model == "ggml-tiny.bin"`; `settings.task == "transcribe"`; `selected_range` 1601..6401.
+  - (b) Name round trip for fr, it, de, zh, ko, fa, hi, sw (code in `source.language.code`, `settings.language`, `language`).
+  - (c) Cantonese → error naming `yue`, no outputs (case 4).
+  - (d) `zulu` → error, no outputs (case 3).
+  - (e) `ggml-nope.bin` → error, no outputs (case 5).
+  - (f) No-clobber (case 6, unchanged test).
+  - (g) `download-model ggml-tiny.bin` prints an existing path under the HF cache.
+- Commands: `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`.
+- Artifact runs:
+  - `cargo run -- download-model` (large-v3-turbo).
+  - Real transcription of `qahwa_1.mp3 --language ar --start 01:00 --end 01:15`, with output inspected.
+  - The same command with `HF_ENDPOINT=http://127.0.0.1:9` (offline, case 2).
+  - A YouTube `--url … --transcribe --start --end` run.
+  - `grep -rn "whisper-python\|whisper_python\|mlx_whisper\|mlx-whisper"` over `src tests scripts skills README.md design` → only historical research text.
+
+**Boundary state:** the CLI transcribes natively; all tests and lint are green; no Python reference remains in the app, tests, skill instructions, or README transcription section. The README's other sections and the setup scripts are unchanged; the Phase 2 inputs are ready.
+
+### Phase 2 — Setup scripts and README rewrite
+
+**Outcome:** one entry point per OS installs the tools, builds, downloads the Whisper model into the HF cache, and installs the skill in both locations; nothing installs Python. The README explains setup and usage.
+
+**Change inventory**
+
+| File | Change | Author |
+|---|---|---|
+| `setup.sh` (rewrite of the uncommitted draft) | `cd "$repo"`. Mac: brew missing of `cargo=rust cmake ffmpeg yt-dlp deno`. Linux: apt or pacman missing of `ffmpeg`, C/C++ toolchain (`build-essential` / `base-devel`), `cmake`, `unzip`; rustup and the Deno installer if absent; `yt-dlp_linux` → `~/.local/bin/yt-dlp`; other distros print the missing list and exit. All: `cargo build`, `cargo run --quiet -- download-model`, `scripts/install-skill.sh` for `~/.agents/skills` and `~/.claude/skills`. No `python` anywhere | me |
+| `setup.ps1` (rewrite of the uncommitted draft) | winget `yt-dlp.yt-dlp` and `Kitware.CMake` if absent; rustup-init if no `cargo`; refresh PATH; `cargo build`; `cargo run --quiet -- download-model`; skill junctions in both dirs (same refuse-to-replace rule as `install-skill.sh`) | me |
+| `README.md` | rewrite with these sections: what it does; Setup (`./setup.sh` / `setup.ps1`, what each installs, manual equivalents); CLI usage (local file and YouTube URL with each preset `formats/default.json`, `joining-then-timing.json`, `shorter.json`, `--chunk-target-size-seconds`, `--start/--end`, sequence-only, metadata, transcription, `download-model`, Anki); Format file reference; Skill usage (install, invoke `/language-jutsu-listening` in Claude Code and `$language-jutsu-listening` in Codex, the options from SKILL.md "Understand the learning request": level, session time, chunk size and pace, supplemental materials, listening goal, content and familiarity, interaction; plus Anki flashcards (new or existing deck) and reminders, with example prompts); Languages; Development checks. Existing accurate reference material is kept, reorganized under these sections | me |
+
+**Verification**
+
+- `sh -n setup.sh`; `shellcheck setup.sh`. The only expected notices are the intentional word-split of package lists (SC2086) and the `CDPATH=` idiom shared with `install-skill.sh` (SC1007).
+- Run `./setup.sh` on this Mac end to end; record the output. Confirm: no Python installed or invoked; the model exists under `~/.cache/huggingface/hub/models--ggerganov--whisper.cpp`; skill links exist in both dirs (install-skill reports "Installed" or "Already installed").
+- Run every README CLI example as written (file and URL, each format, transcription, Anki) and record exit codes and outputs.
+- Linux: run `setup.sh` in a Debian container if Docker is available on this machine; otherwise report it as unexecuted. Windows: not executable here; report unexecuted.
+- `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings` remain green.
+
+**Boundary state:** a new user runs one script and has a working CLI, model, and skill; the README documents setup, CLI, and skill usage.
+
+## 5. Requirement → behavior → phase → check
+
+| Req | Behavior | Phase | Check that fails if absent |
+|---|---|---|---|
+| U1.1 README rewrite: setup, CLI (files, URLs, formats), skill options | README sections in Phase 2 | 2 | README examples executed; section review against SKILL.md list |
+| U1.2 setup script, single entry, downloads backends, not stored on GitHub | `setup.sh` / `setup.ps1`; whisper.cpp built from crates; model in HF cache (outside repo) | 2 (1 supplies `download-model`) | Mac end-to-end setup run; `git status` shows no model files |
+| U2 Homebrew for Mac; Windows and Linux options | brew / apt / pacman / winget paths | 2 | Mac run; Linux container run if available; Windows reported unexecuted |
+| U3 Both | install-skill to `~/.agents/skills` and `~/.claude/skills`; ps1 junctions to both | 2 | links present after Mac run |
+| U4 Whisper only | setup downloads only the Whisper model | 2 | setup script contents; Mac run output |
+| U5 HF cache | hf-hub default cache | 1, 2 | test (g); model path under `~/.cache/huggingface/hub` |
+| U6 no Python install | no Python in scripts or app | 1, 2 | grep check; script contents |
+| U8 native code | whisper-rs in-process | 1 | integration tests (a)–(e) |
+| U9 HF cache + subcommand | `download-model`; `--transcribe` uses the cache by default | 1 | test (g); offline artifact run |
+| U10 tests 1 & 2 | unit and real-tiny integration tests | 1 | `cargo test` |
+| U11 deletions | four removals | 1 | files absent; `--whisper-python` rejected by clap |
+| U12 lint fix | anki.rs collapse | 1 | clippy exit 0 |
+| README:111 original-source seconds, transcribe only, unsupported fails | §3 steps 2, 3, 5, 8 | 1 | tests (a), (c), (d) |
+| README:55 no replace | step 1 | 1 | test (f) |
+| preparation.md:38 fields | document shape | 1 | test (a) field assertions |
+
+### Implementation choices (agent-authored, not requirements)
+
+- **Word timing uses whisper.cpp token `t0`/`t1`, not DTW.** research/technical-options.md:25 records that whisper.cpp word timestamps are "explicitly experimental"; mlx-whisper's were also estimates. This is the same class of output, stated in the README as estimates.
+- **whisper.cpp diagnostics are silenced**; failures still surface as errors.
+- **The model download shows no progress bar.** Setup prints a line before the 1.5 GiB download.
+
+## 6. Validation gate
+
+Run `/verify-plan` on this file. Phase 1 starts only after you review that report and authorize it.

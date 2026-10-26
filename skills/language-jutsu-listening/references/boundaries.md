@@ -2,7 +2,7 @@
 
 These excerpts were checked against the implementation on 13 October 2026. Inspect current code when changing an interface. Lesson `task.md` is read and written by the assistant; it is not a JSON request accepted by Jutsu. Scheduling uses the exposed desktop tool contract, whose implementation is not available here.
 
-The Language Jutsu CLI, Rust/Python transcription bridge, source retention, and rendered metadata shapes are traced with code excerpts in [transcription-and-metadata.md](../../../design/transcription-and-metadata.md).
+The Language Jutsu CLI, native whisper.cpp transcription, source retention, and rendered metadata shapes are traced with code excerpts in [transcription-and-metadata.md](../../../design/transcription-and-metadata.md).
 
 ## The app constructs the study audio
 

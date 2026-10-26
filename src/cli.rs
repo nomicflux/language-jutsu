@@ -42,7 +42,7 @@ pub(crate) struct Args {
     /// cantonese (yue), korean (ko), farsi/persian (fa), hindi (hi),
     /// kiswahili/swahili (sw), isizulu/zulu (zu), isixhosa/xhosa (xh), sesotho (st).
     /// Other nonempty labels remain valid for audio processing.
-    /// Transcription depends on MLX Whisper's language and model support.
+    /// Transcription depends on Whisper's language and model support.
     #[arg(long, required = true, value_parser = language_code)]
     language: Option<String>,
 
@@ -78,17 +78,13 @@ pub(crate) struct Args {
     #[arg(long)]
     sequence_only: bool,
 
-    /// Transcribe the selected source audio with MLX Whisper, without a playback format.
+    /// Transcribe the selected source audio with Whisper, without a playback format.
     #[arg(long)]
     transcribe: bool,
 
-    /// Python executable with mlx-whisper installed (transcription only).
-    #[arg(long, requires = "transcribe")]
-    whisper_python: Option<PathBuf>,
-
-    /// MLX Whisper model directory or Hugging Face repository (transcription only).
-    #[arg(long, requires = "transcribe")]
-    whisper_model: Option<String>,
+    /// Whisper model file in the ggerganov/whisper.cpp Hugging Face repository (transcription only).
+    #[arg(long, requires = "transcribe", default_value = crate::transcription::DEFAULT_MODEL)]
+    whisper_model: String,
 
     /// Retain the full downloaded source and its provenance sidecar at this path.
     #[arg(long, requires = "url", conflicts_with = "check")]
@@ -108,6 +104,12 @@ pub(crate) enum Command {
         /// New .apkg file; existing files are never replaced.
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Download a Whisper model into the Hugging Face cache for --transcribe.
+    DownloadModel {
+        /// Model file in the ggerganov/whisper.cpp Hugging Face repository.
+        #[arg(default_value = crate::transcription::DEFAULT_MODEL)]
+        model: String,
     },
 }
 
@@ -231,10 +233,7 @@ impl TryFrom<Args> for Request {
             window,
             chunk_target_size_seconds: args.chunk_target_size_seconds,
             whisper: crate::transcription::Options {
-                python: args.whisper_python.unwrap_or_else(|| "python3".into()),
-                model: args
-                    .whisper_model
-                    .unwrap_or_else(|| "mlx-community/whisper-large-v3-turbo".into()),
+                model: args.whisper_model,
             },
             save_source: args.save_source,
             metadata_output: args.metadata_output,

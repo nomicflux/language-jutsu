@@ -28,9 +28,13 @@ fn main() -> ExitCode {
 
 fn execute() -> Result<(), Box<dyn Error>> {
     let mut args = cli::Args::parse();
-    if let Some(cli::Command::Anki { input, output }) = args.command.take() {
-        return anki::build(&input, &output);
+    match args.command.take() {
+        Some(cli::Command::Anki { input, output }) => anki::build(&input, &output),
+        Some(cli::Command::DownloadModel { model }) => {
+            let path = transcription::fetch_model(&model)?;
+            println!("Model cached: {}", path.display());
+            Ok(())
+        }
+        None => app::run(cli::Request::try_from(args)?),
     }
-    let request = cli::Request::try_from(args)?;
-    app::run(request)
 }

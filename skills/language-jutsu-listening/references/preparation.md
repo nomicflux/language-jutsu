@@ -1,6 +1,6 @@
 # Build the processed listening progression
 
-Use the existing Language Jutsu app, saved runtime settings and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_python`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
+Use the existing Language Jutsu app, saved runtime settings and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
 
 ## Get the requested conversation
 
@@ -14,7 +14,7 @@ Jutsu's `--url` is for a single supported YouTube video URL. Acquire and transcr
 cargo run --quiet --manifest-path "$repo/Cargo.toml" -- \
   --url "$url" --save-source "$lesson/original.audio" \
   --language "$language" --transcribe \
-  --whisper-python "$whisper_python" --whisper-model "$whisper_model" \
+  --whisper-model "$whisper_model" \
   --output "$lesson/transcript.txt"
 ```
 
@@ -26,12 +26,12 @@ For a public publisher/RSS/direct-media URL, resolve the actual audio link from 
 
 ## Produce source-language text
 
-MLX Whisper runs locally on supported Apple Silicon hardware. Configure the Python executable containing `mlx-whisper` and an explicit local model or model repository. The Jutsu README gives dependency setup. Record usable durable paths in `listening/settings.md`, not investigation `/tmp` paths. Test the configured runtime by actually transcribing the lesson.
+Transcription runs whisper.cpp inside the Jutsu executable. `whisper_model` is a model file in the ggerganov/whisper.cpp Hugging Face repository, `ggml-large-v3-turbo.bin` unless the lesson needs another; Jutsu reads it from the Hugging Face cache and downloads it there when missing. The Jutsu README gives setup. Record the model in `listening/settings.md`. Test the configured runtime by actually transcribing the lesson.
 
 ```sh
 cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
   --language "$language" --start "$start" --end "$end" --transcribe \
-  --whisper-python "$whisper_python" --whisper-model "$whisper_model" \
+  --whisper-model "$whisper_model" \
   --output "$lesson/transcript.txt"
 ```
 

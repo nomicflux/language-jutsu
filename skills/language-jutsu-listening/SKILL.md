@@ -91,7 +91,7 @@ Conclude after the learning progression has been carried through, adapting to ac
 
 ## Keep the lesson resumable
 
-Resolve this skill directory through symlinks; the repository is two directories above it. Use its durable `listening/` directory unless the user chose another location. Store usable repository, lesson-root, Python and model paths in `listening/settings.md`.
+Resolve this skill directory through symlinks; the repository is two directories above it. Use its durable `listening/` directory unless the user chose another location. Store usable repository, lesson-root paths and the Whisper model in `listening/settings.md`.
 
 Maintain `listening/YYYY-MM-DD/task.md`, with separate lesson subdirectories when needed. Save the request and clarifications, content and instruction languages, source/provenance and evidence paths, processed progression and formats, measured player durations, notes and other materials, and exact pending prompt. Keep these current after revisions. Record actual replies, help provided, covered material and the next learning activity. Keep simulated reviews separate from learner responses.
 

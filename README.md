@@ -2,13 +2,13 @@
 
 A Rust CLI project for preparing foreign-language recordings for repeated listening practice. Language and dialect labels come from the requested recording; audio processing does not restrict them to a fixed list.
 
-The CLI decodes audio, selects a source window, finds pause-based units, and renders the learning formula with pitch-preserving tempo changes and practice gaps. `--decode-only`, `--segment-only`, and `--sequence-only` expose the earlier stages for testing. `--transcribe` generates source-language text and timestamps through an MLX Whisper helper.
+The CLI decodes audio, selects a source window, finds pause-based units, and renders the learning formula with pitch-preserving tempo changes and practice gaps. `--decode-only`, `--segment-only`, and `--sequence-only` expose the earlier stages for testing. `--transcribe` generates source-language text and timestamps with whisper.cpp, built into the executable.
 
 ## Languages
 
 Pass a code or one of these names to `--language`. Names are case-insensitive and normalize to the listed code in metadata and transcription requests. Other nonempty language labels remain accepted for audio processing; `--dialect` remains an optional label.
 
-| Language / accepted names | Code | MLX Whisper transcription |
+| Language / accepted names | Code | Whisper transcription |
 | --- | --- | --- |
 | French | `fr` | Supported by multilingual models |
 | Italian | `it` | Supported by multilingual models |
@@ -19,11 +19,11 @@ Pass a code or one of these names to `--language`. Names are case-insensitive an
 | Farsi, Persian | `fa` | Supported by multilingual models |
 | Hindi | `hi` | Supported by multilingual models |
 | Kiswahili, Swahili | `sw` | Supported by multilingual models |
-| isiZulu, Zulu | `zu` | Not supported by the current MLX Whisper tokenizer |
-| isiXhosa, Xhosa | `xh` | Not supported by the current MLX Whisper tokenizer |
-| Sesotho | `st` | Not supported by the current MLX Whisper tokenizer |
+| isiZulu, Zulu | `zu` | Not in the Whisper language table |
+| isiXhosa, Xhosa | `xh` | Not in the Whisper language table |
+| Sesotho | `st` | Not in the Whisper language table |
 
-All listed languages can use decoding, segmentation, sequencing and study-audio rendering. Transcription support follows the [MLX Whisper language table](https://github.com/ml-explore/mlx-examples/blob/main/whisper/mlx_whisper/tokenizer.py); the [large-v3 model introduced the Cantonese token](https://huggingface.co/openai/whisper-large-v3).
+All listed languages can use decoding, segmentation, sequencing and study-audio rendering. Transcription support follows the [whisper.cpp language table](https://github.com/ggml-org/whisper.cpp/blob/master/src/whisper.cpp) (`g_lang`); the [large-v3 model introduced the Cantonese token](https://huggingface.co/openai/whisper-large-v3).
 
 ```sh
 cargo run -- recording.mp3 --language french \
@@ -44,7 +44,7 @@ In Codex, invoke `$language-jutsu-listening` and describe the conversation you w
 
 The skill prepares and conducts a full interactive lesson around the conversation you request: chunked listening, explanations tied to the speech, learner responses, and returning to the connected conversation. It includes separate preparation and start reminder setup; installation does not activate reminders. The rewritten lesson design is undergoing a real learner session; human usability is not yet accepted.
 
-Install audio dependencies separately: Rust/Cargo and [FFmpeg/ffprobe](#generate-study-audio), plus the [YouTube dependencies](#youtube-input) for URLs and [MLX Whisper](#transcribe-source-audio) for transcription.
+Install audio dependencies separately: Rust/Cargo and [FFmpeg/ffprobe](#generate-study-audio), plus the [YouTube dependencies](#youtube-input) for URLs and CMake with a C/C++ compiler to build [transcription](#transcribe-source-audio).
 
 ## Build an Anki package
 
@@ -95,20 +95,17 @@ Downloader settings are isolated from personal yt-dlp configuration, filesystem 
 
 ## Transcribe source audio
 
-MLX Whisper requires an Apple Silicon Mac, FFmpeg, and a Python environment containing `mlx-whisper` (tested with 0.4.3). Create an environment at a durable path and install the helper dependency:
+Transcription runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) inside the Rust executable (Metal-accelerated on macOS) and needs FFmpeg. Building it needs CMake and a C/C++ compiler. Models come from the [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp) Hugging Face repository and are kept in the standard Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME/hub`):
 
 ```sh
-python3 -m venv .venv-whisper
-.venv-whisper/bin/python -m pip install 'mlx-whisper==0.4.3'
+cargo run -- download-model
 cargo run -- recording.mp3 --language ja --start 0.3 --end 20.3 \
-  --transcribe --whisper-python .venv-whisper/bin/python \
-  --whisper-model mlx-community/whisper-large-v3-turbo \
-  --output transcript.txt
+  --transcribe --output transcript.txt
 ```
 
-The Python helper is embedded in the Rust executable. `--whisper-python` defaults to `python3`; `--whisper-model` defaults to the model repository shown above and also accepts a local model directory. A repository model is downloaded by MLX Whisper when needed. No playback format is loaded or accepted for transcription. File and YouTube inputs, source retention, and original-timeline windows work in this mode.
+`download-model` fetches `ggml-large-v3-turbo.bin` unless another model file is named. `--whisper-model` selects the model file for transcription and has the same default; a model not yet cached is downloaded on first use, and a cached model works offline. No playback format is loaded or accepted for transcription. File and YouTube inputs, source retention, and original-timeline windows work in this mode.
 
-The outputs are `transcript.txt` and `transcript.txt.json`. JSON includes source provenance, requested language/dialect, model and backend version, decoding settings, text, segments, words, and ASR diagnostics. Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. The helper always uses `task="transcribe"`, never English translation. Use a language code supported by Whisper; an unsupported code fails explicitly. A dialect label is metadata, not a promise of model dialect accuracy. Transcripts do not establish speaker identities or correct answers for tutoring.
+The outputs are `transcript.txt` and `transcript.txt.json`. JSON includes source provenance, requested language/dialect, model and whisper.cpp version, decoding settings, text, segments with `no_speech_prob`, and words with probabilities. Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. Transcription always transcribes, never translates into English. Use a language code supported by Whisper; an unsupported code, or a language the chosen model lacks, fails explicitly. A dialect label is metadata, not a promise of model dialect accuracy. Transcripts do not establish speaker identities or correct answers for tutoring.
 
 ## Save render metadata
 

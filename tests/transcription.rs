@@ -1,59 +1,145 @@
-#![cfg(unix)]
-
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
 use serde_json::Value;
 use tempfile::TempDir;
 
-struct Fixture {
-    dir: TempDir,
+// Real whisper.cpp with the smallest multilingual model; fetched once into the HF cache.
+const MODEL: &str = "ggml-tiny.bin";
+
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
-impl Fixture {
-    fn new(mode: &str) -> Self {
+struct Run {
+    dir: TempDir,
+    result: std::process::Output,
+}
+
+impl Run {
+    fn new(input: &str, language: &str, model: &str, window: &[&str]) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let samples: Vec<i16> = (0..16000).collect();
-        write_wav(&dir.path().join("input.wav"), &samples);
-        let helper = include_str!("helpers/whisper_python.py");
-        let (shebang, body) = helper.split_once('\n').unwrap();
-        let fake_python = dir.path().join("python");
-        fs::write(&fake_python, format!("{shebang}\nMODE = {mode:?}\n{body}")).unwrap();
-        fs::set_permissions(&fake_python, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { dir }
+        Self::in_dir(dir, input, language, model, window)
     }
 
-    fn run(&self) -> std::process::Output {
-        self.run_language("ja", "ja")
-    }
-
-    fn run_language(&self, language: &str, expected_code: &str) -> std::process::Output {
+    fn in_dir(dir: TempDir, input: &str, language: &str, model: &str, window: &[&str]) -> Self {
         // There is no format file or --format: transcription is standalone.
-        Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
-            .env("EXPECTED_LANGUAGE", expected_code)
-            .arg(self.dir.path().join("input.wav"))
+        let result = Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
+            .arg(fixture(input))
             .args([
                 "--language",
                 language,
                 "--transcribe",
-                "--start",
-                "0.10001",
-                "--end",
-                "0.40001",
                 "--whisper-model",
-                "test/model",
-                "--whisper-python",
+                model,
             ])
-            .arg(self.dir.path().join("python"))
+            .args(window)
             .arg("--output")
-            .arg(self.dir.path().join("transcript.txt"))
+            .arg(dir.path().join("transcript.txt"))
             .output()
-            .unwrap()
+            .unwrap();
+        Self { dir, result }
     }
 
-    fn assert_no_outputs(&self) {
+    fn metadata(&self) -> Value {
+        let stderr = String::from_utf8_lossy(&self.result.stderr);
+        assert!(self.result.status.success(), "{stderr}");
+        let json = fs::read(self.dir.path().join("transcript.txt.json")).unwrap();
+        serde_json::from_slice(&json).unwrap()
+    }
+
+    fn assert_failed_without_outputs(&self, error: &str) {
+        let stderr = String::from_utf8_lossy(&self.result.stderr);
+        assert!(!self.result.status.success());
+        assert!(stderr.contains(error), "{stderr}");
         assert!(!self.dir.path().join("transcript.txt").exists());
         assert!(!self.dir.path().join("transcript.txt.json").exists());
     }
+}
+
+fn words(json: &Value) -> Vec<(String, f64)> {
+    json["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|segment| segment["words"].as_array().unwrap())
+        .map(|word| {
+            (
+                word["word"].as_str().unwrap().to_owned(),
+                word["start"].as_f64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn first_start(json: &Value, wanted: &str) -> f64 {
+    words(json)
+        .into_iter()
+        .find(|(word, _)| word == wanted)
+        .unwrap()
+        .1
+}
+
+fn assert_words_rebuild_segments(json: &Value) {
+    for segment in json["segments"].as_array().unwrap() {
+        let joined: String = segment["words"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word["word"].as_str().unwrap())
+            .collect();
+        assert_eq!(joined, segment["text"].as_str().unwrap());
+        assert!(!joined.contains('\u{FFFD}'), "{joined}");
+    }
+}
+
+#[test]
+fn english_speech_is_transcribed_into_whole_words() {
+    let json = Run::new("jfk.wav", "en", MODEL, &[]).metadata();
+    let text = json["text"].as_str().unwrap();
+    assert!(
+        text.contains("ask not what your country can do for you"),
+        "{text}"
+    );
+    assert_words_rebuild_segments(&json);
+    let words: Vec<String> = words(&json).into_iter().map(|(word, _)| word).collect();
+    assert!(words.contains(&" Americans".to_owned()), "{words:?}");
+    assert!(words.contains(&" country".to_owned()), "{words:?}");
+    assert_eq!(json["backend"]["name"], "whisper.cpp");
+    assert_eq!(json["backend"]["model"], MODEL);
+    assert_eq!(json["settings"]["task"], "transcribe");
+}
+
+#[test]
+fn selected_window_keeps_times_on_the_original_recording() {
+    let full = Run::new("jfk.wav", "en", MODEL, &[]).metadata();
+    let window = Run::new("jfk.wav", "en", MODEL, &["--start", "3", "--end", "11"]).metadata();
+    assert_eq!(window["timestamp_reference"], "original_source_seconds");
+    assert_eq!(window["source_offset_seconds"], 3.0);
+    assert_eq!(window["source"]["selected_range"]["start_frame"], 48000);
+    let text = window["text"].as_str().unwrap();
+    assert!(!text.contains("fellow Americans"), "{text}");
+    let (whole, selected) = (
+        first_start(&full, " country"),
+        first_start(&window, " country"),
+    );
+    assert!((whole - selected).abs() < 0.3, "{whole} vs {selected}");
+}
+
+#[test]
+fn japanese_speech_is_split_into_character_groups() {
+    let json = Run::new("botchan-opening.mp3", "japanese", MODEL, &[]).metadata();
+    let text = json["text"].as_str().unwrap();
+    for spoken in ["リブリボックス", "子供", "学校"] {
+        assert!(text.contains(spoken), "{text}");
+    }
+    assert_words_rebuild_segments(&json);
+    let words: Vec<String> = words(&json).into_iter().map(|(word, _)| word).collect();
+    assert!(
+        words.contains(&"子".to_owned()) && words.contains(&"供".to_owned()),
+        "{words:?}"
+    );
 }
 
 #[test]
@@ -63,127 +149,70 @@ fn language_names_reach_whisper_as_codes_and_round_trip_in_metadata() {
         ("italian", "it"),
         ("german", "de"),
         ("mandarin", "zh"),
-        ("cantonese", "yue"),
         ("korean", "ko"),
         ("farsi", "fa"),
         ("hindi", "hi"),
         ("kiswahili", "sw"),
     ] {
-        let fixture = Fixture::new("ok");
-        let result = fixture.run_language(name, code);
-        assert!(
-            result.status.success(),
-            "{name}: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        let json: Value = serde_json::from_slice(
-            &fs::read(fixture.dir.path().join("transcript.txt.json")).unwrap(),
-        )
-        .unwrap();
+        let json = Run::new("jfk.wav", name, MODEL, &["--end", "3"]).metadata();
         assert_eq!(json["source"]["language"]["code"], code);
         assert_eq!(json["settings"]["language"], code);
         assert_eq!(json["language"], code);
     }
 }
 
-fn write_wav(path: &Path, samples: &[i16]) {
-    let data_size = (samples.len() * 2) as u32;
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
-    bytes.extend_from_slice(b"WAVEfmt ");
-    bytes.extend_from_slice(&16_u32.to_le_bytes());
-    bytes.extend_from_slice(&1_u16.to_le_bytes());
-    bytes.extend_from_slice(&1_u16.to_le_bytes());
-    bytes.extend_from_slice(&16000_u32.to_le_bytes());
-    bytes.extend_from_slice(&32000_u32.to_le_bytes());
-    bytes.extend_from_slice(&2_u16.to_le_bytes());
-    bytes.extend_from_slice(&16_u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_size.to_le_bytes());
-    for sample in samples {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
-    fs::write(path, bytes).unwrap();
-}
-
 #[test]
-fn selected_audio_is_transcribed_without_format_and_times_map_to_source() {
-    let fixture = Fixture::new("ok");
-    let result = fixture.run();
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    assert_eq!(
-        fs::read_to_string(fixture.dir.path().join("transcript.txt")).unwrap(),
-        "お茶にします。\n"
-    );
-    let json: Value =
-        serde_json::from_slice(&fs::read(fixture.dir.path().join("transcript.txt.json")).unwrap())
-            .unwrap();
-    assert_eq!(json["timestamp_reference"], "original_source_seconds");
-    assert_eq!(json["source_offset_seconds"], 1601.0 / 16000.0);
-    assert_eq!(json["segments"][0]["start"], 1601.0 / 16000.0 + 0.02);
-    assert_eq!(json["segments"][0]["end"], 1601.0 / 16000.0 + 0.25);
-    assert_eq!(
-        json["segments"][0]["words"][0]["start"],
-        1601.0 / 16000.0 + 0.04
-    );
-    assert_eq!(
-        json["segments"][0]["words"][0]["end"],
-        1601.0 / 16000.0 + 0.12
-    );
-    assert_eq!(json["segments"][0]["words"][0]["probability"], 0.8);
-    assert_eq!(json["segments"][0]["avg_logprob"], -0.3);
-    assert_eq!(json["backend"]["name"], "mlx-whisper");
-    assert_eq!(json["backend"]["version"], "test-version");
-    assert_eq!(json["backend"]["model"], "test/model");
-    assert_eq!(json["settings"]["task"], "transcribe");
-    assert_eq!(json["source"]["selected_range"]["start_frame"], 1601);
-    assert_eq!(json["source"]["selected_range"]["end_frame"], 6401);
-    assert!(!json.to_string().contains("backend diagnostics"));
-}
-
-#[test]
-fn helper_failure_or_invalid_response_leaves_no_outputs() {
-    for (mode, error) in [
-        ("backend_failure", "test model failed"),
-        ("invalid_json", "invalid mlx-whisper helper response"),
-        ("bad_timestamp", "invalid timestamps"),
-        ("wrong_language", "unexpected model, language, or settings"),
-        ("missing_dependency", "--whisper-python"),
+fn unsupported_language_or_model_leaves_no_outputs() {
+    for (language, model, error) in [
+        (
+            "cantonese",
+            MODEL,
+            "ggml-tiny.bin does not support language yue",
+        ),
+        ("zulu", MODEL, "Whisper does not support language code zu"),
+        (
+            "en",
+            "ggml-nope.bin",
+            "cannot fetch Whisper model ggml-nope.bin",
+        ),
     ] {
-        let fixture = Fixture::new(mode);
-        let result = fixture.run();
-        assert!(!result.status.success(), "{mode}");
-        assert!(
-            String::from_utf8_lossy(&result.stderr).contains(error),
-            "{mode}: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        fixture.assert_no_outputs();
+        Run::new("jfk.wav", language, model, &[]).assert_failed_without_outputs(error);
     }
 }
 
 #[test]
 fn existing_text_or_sidecar_is_never_replaced() {
-    for existing in ["transcript.txt", "transcript.txt.json"] {
-        let fixture = Fixture::new("ok");
-        fs::write(fixture.dir.path().join(existing), "keep me").unwrap();
-        let result = fixture.run();
-        assert!(!result.status.success());
-        assert!(String::from_utf8_lossy(&result.stderr).contains("already exists"));
+    for (existing, other) in [
+        ("transcript.txt", "transcript.txt.json"),
+        ("transcript.txt.json", "transcript.txt"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(existing), "keep me").unwrap();
+        let run = Run::in_dir(dir, "jfk.wav", "en", MODEL, &[]);
+        let stderr = String::from_utf8_lossy(&run.result.stderr);
+        assert!(!run.result.status.success());
+        assert!(stderr.contains("already exists"), "{stderr}");
         assert_eq!(
-            fs::read_to_string(fixture.dir.path().join(existing)).unwrap(),
+            fs::read_to_string(run.dir.path().join(existing)).unwrap(),
             "keep me"
         );
-        let other = if existing.ends_with("json") {
-            "transcript.txt"
-        } else {
-            "transcript.txt.json"
-        };
-        assert!(!fixture.dir.path().join(other).exists());
+        assert!(!run.dir.path().join(other).exists());
     }
+}
+
+#[test]
+fn download_model_caches_the_file_in_the_hugging_face_cache() {
+    let result = Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
+        .args(["download-model", MODEL])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let path = stdout.trim().strip_prefix("Model cached: ").unwrap();
+    assert!(path.contains("models--ggerganov--whisper.cpp"), "{path}");
+    assert!(PathBuf::from(path).is_file());
 }

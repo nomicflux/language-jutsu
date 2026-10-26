@@ -322,13 +322,13 @@ fn sound(base: &Path, path: &Path, media: &mut BTreeMap<String, String>) -> Resu
     {
         return Err(format!("audio filename is unsafe in a sound reference: {name}").into());
     }
-    if let Some(previous) = media.insert(name.to_owned(), path_text.to_owned()) {
-        if previous != path_text {
-            return Err(format!(
-                "different audio files share basename {name:?}; give them unique names"
-            )
-            .into());
-        }
+    if let Some(previous) = media.insert(name.to_owned(), path_text.to_owned())
+        && previous != path_text
+    {
+        return Err(format!(
+            "different audio files share basename {name:?}; give them unique names"
+        )
+        .into());
     }
     Ok(format!("[sound:{name}]"))
 }
