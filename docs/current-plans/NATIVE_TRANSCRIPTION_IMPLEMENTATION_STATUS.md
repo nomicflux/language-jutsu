@@ -32,4 +32,39 @@
 - YouTube `mK-xzqnJmSQ --start 03:00 --end 03:10 --transcribe` → exit 0; offset 180.0; segments 180.0–190.0.
 - The grep for `whisper-python|whisper_python|mlx_whisper|mlx-whisper|mlx whisper` over `src tests scripts skills README.md design Cargo.toml .cargo` returns no matches.
 
-## Phase 2 — Setup scripts and README rewrite: not started
+## Phase 2 — Setup scripts and README rewrite: in progress, CI pending (2026-10-26)
+
+### Second attempt (the replanned Phase 2)
+
+- `.cargo/config.toml` deleted; whisper.cpp bindings are generated on every platform.
+- `setup.sh`: macOS with Homebrew (`rust cmake ffmpeg deno` when missing; standalone `yt-dlp_macos` → `/usr/local/bin/yt-dlp`), Debian/Ubuntu x86_64 (`apt-get install --no-install-recommends ca-certificates curl unzip build-essential cmake libclang-dev ffmpeg`, rustup, Deno installer, `yt-dlp_linux` → `/usr/local/bin/yt-dlp`); other systems exit 1 with "setup.sh supports macOS with Homebrew and Debian/Ubuntu on x86_64".
+- `setup.ps1`: throws "setup.ps1 supports Windows on x64" unless AMD64; winget `yt-dlp.yt-dlp`, `Kitware.CMake`, `LLVM.LLVM` when missing (throws on a nonzero exit); rustup-init `x86_64`.
+- README Setup section rewritten per target.
+- `.github/workflows/setup.yml`: macos-15; ubuntu:24.04 and debian:12 containers as a sudo user with the `python3` check; windows-2025 with the winget bootstrap.
+
+Local checks (Mac):
+
+- `sh -n setup.sh` exit 0; `shellcheck setup.sh` reports only SC1007 (`CDPATH=`) and SC2086 (`brew install $packages`).
+- After `cargo clean -p whisper-rs-sys` (the build script reruns only when `wrapper.h` changes): `cargo fmt --check` 0, `cargo clippy --all-targets -- -D warnings` 0, `cargo test` 71 passed (1 + 2 + 57 + 4 + 7). The generated `bindings.rs` contains `struct __sFILE`.
+- `./setup.sh` exit 0: `Model cached: ~/.cache/huggingface/hub/models--ggerganov--whisper.cpp/snapshots/5359861c…/ggml-large-v3-turbo.bin`; "Already installed" for both skill links; `brew list --formula` identical before and after.
+- Every README CLI example, run as written in a fresh copy of the tracked files (no `.cargo/config.toml`), exited 0. The 17 runs: local default, YouTube default, joining-then-timing, YouTube shorter, the chunk override, `--save-source`, `--check`, sequence, units, metadata, `download-model`, file transcription, URL transcription, the decoder, the ffmpeg WAV conversion, `anki`, and the standalone binary.
+
+### First attempt
+
+The failures below were planning omissions. Phase 2 was replanned from a full dependency trace ([setup-dependencies.md](setup-dependencies.md)); the new Phase 2 is in [native-transcription-and-setup.md](native-transcription-and-setup.md).
+
+### Done
+
+- `setup.sh` and `setup.ps1` rewritten (no Python steps); `README.md` rewritten. Linux `yt-dlp` uses `yt-dlp_linux_aarch64` on aarch64 (`yt-dlp_linux` is x86_64 only); apt/pacman lists add `curl`, which the rustup, Deno and yt-dlp downloads need.
+- `sh -n setup.sh` exit 0; `shellcheck` reports only SC1007 and SC2086 (expected).
+- macOS `./setup.sh`: exit 0, with all brew tools already present. The model was cached and the skill installed in `~/.agents/skills` and `~/.claude/skills`. A rerun reports "Already installed".
+- Every README CLI example ran in a scratch copy and exited 0: file and URL with each format, the chunk override, `--save-source`, `--check`, sequence, units, metadata, `download-model`, file and URL transcription, the decoder plus ffmpeg, `anki`, and the standalone binary.
+- `cargo fmt --check` 0, `cargo clippy --all-targets -- -D warnings` 0, `cargo test` 71 passed.
+
+### Failures
+
+1. **Homebrew `yt-dlp` installs Python.** `brew deps yt-dlp` lists `python@3.14`. A fresh Mac running `setup.sh` would install Python (U6).
+2. **Debian apt installs Python.** In the Debian bookworm container run, `apt-get install` pulled `python3` through ffmpeg's Recommends. Simulation: with Recommends, 4 python3 packages; with `--no-install-recommends`, 0.
+3. **The whisper.cpp build fails on aarch64 Linux (GCC 12.2, Debian bookworm).** `ggml-cpu/vec.cpp`: `inlining failed in call to 'always_inline' 'vaddq_f16' … target specific option mismatch`. The variant flags were `-march=armv8-a+…+fp16fml…` and `GGML_COMPILER_SUPPORTS_FP16_FORMAT_I3E - Failed`. whisper-rs-sys passes `GGML_*`/`CMAKE_*` environment variables to CMake (`build.rs:279–285`). x86_64 Linux has not been run.
+
+Windows: not executable here. Not committed.

@@ -1,0 +1,65 @@
+name: setup
+
+on:
+  push:
+    branches: [native-transcription-setup]
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./setup.sh
+      - run: cargo test
+      - run: cargo run -- tests/fixtures/jfk.wav --language en --transcribe --output jfk.txt && cat jfk.txt
+      - run: yt-dlp --version && deno --version
+
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'debian:12']
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup and tests in a fresh ${{ matrix.image }} as a sudo user
+        run: |
+          docker run --rm -i -v "$PWD:/src:ro" ${{ matrix.image }} sh -eux <<'EOF'
+          apt-get update
+          apt-get install -y --no-install-recommends sudo
+          useradd -m user
+          echo 'user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/user
+          cp -r /src /home/user/repo
+          chown -R user:user /home/user/repo
+          su - user -c '
+            set -eux
+            cd ~/repo
+            ./setup.sh
+            export PATH="$HOME/.cargo/bin:$HOME/.deno/bin:$PATH"
+            if command -v python3; then echo "python3 is installed" >&2; exit 1; fi
+            cargo test
+            cargo run -- tests/fixtures/jfk.wav --language en --transcribe --output jfk.txt
+            cat jfk.txt
+            yt-dlp --version
+            deno --version
+          '
+          EOF
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: bootstrap winget
+        run: |
+          Install-Module Microsoft.WinGet.Client -Force
+          Repair-WinGetPackageManager -AllUsers
+      - name: setup and tests
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./setup.ps1
+          cargo test
+          cargo run -- tests/fixtures/jfk.wav --language en --transcribe --output jfk.txt
+          Get-Content jfk.txt
+          yt-dlp --version
+          deno --version

@@ -44,6 +44,32 @@
 **U13** (user, after the plan was presented; the plan's note read "your own `listening/settings.md` still names `.venv-whisper` and the MLX model folder"):
 > Remove stale setting. Proceed.
 
+**Later user statements (verbatim):**
+> TESTS NEED TO BE REAL TESTS, NOT FAKE TESTS.
+>
+> EVERY FAKE TEST IS FUCKING ROT.
+
+> JUST MAKE IT WORK WITH REAL TESTS!!!!! STOP ASKING PERMISSION FOR WHAT YOU'VE BEEN TOLD TO DO, WHILE YOU SIMULTANEOUSLY CREATE SHITTY WORK YOU WEREN'T TOLD TO DO.
+
+> THE SETUP SCRIPT SHOULD BE CALLING THE DOWNLOAD-MODEL IN THE APP, SO WHAT THE FUCK IS GOING ON?
+
+> AND YOU HAD AN RM IN THERE, AND YOU WERE DOWNLOADING IT MANUALLY.
+
+> Yes, proceed. Without extra bullshit.
+
+> REDO FROM SCRATCH. TRACE DEPENDENCIES.
+>
+> WE DO NOT FIGURE THIS OUT IN IMPLEMENTATION, WE FIGURE THIS OUT IN PLANNING, YOU FUCKING IMBECILE.
+
+> ". Examples: does a standalone yt-dlp with its own Python inside count as installing Python,"
+>
+> You have the context. What the fuck sort of question is this. YOU HAVE THE CONVERSATION AND _WHY_ WE DECIDED NOT TO INSTALL PYTHON, IT IS NOT A BLACK-BOX COMMAND.
+
+Answers on 2026-10-26 (question text in [setup-dependencies.md](setup-dependencies.md)):
+- Verification of platforms this Mac cannot run: "GitHub Actions (Recommended)" (option: "Add a workflow file to the repo and push this branch to GitHub; … Publishes the branch and adds a CI file.")
+- Windows ARM: "Where is this going to happen?"
+- Debian 12 ARM: "You are targetted arbitrary builds. I just wanted a simple "a user could use this from a non-mac system""
+
 ### Source requirements (repository text, not the user)
 
 - **README.md:109–111 (current):** "No playback format is loaded or accepted for transcription. File and YouTube inputs, source retention, and original-timeline windows work in this mode." "Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. The helper always uses `task="transcribe"`, never English translation. Use a language code supported by Whisper; an unsupported code fails explicitly."
@@ -93,7 +119,7 @@ Probe crate: whisper-rs 0.16.0 (`metal`) and hf-hub 1.0.0 (`blocking`), built an
   - Windows: winget `yt-dlp.yt-dlp` x64/arm64 is the official `yt-dlp.exe` and depends on `DenoLand.Deno` and `yt-dlp.FFmpeg`, which provides `ffmpeg`/`ffprobe`. winget has `Kitware.CMake`.
   - Rust: rustup-init.exe (`https://win.rustup.rs/{x86_64|aarch64}`) offers to install the Visual Studio C++ prerequisites. Unix: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
   - Deno: `curl -fsSL https://deno.land/install.sh | sh` (needs `unzip`).
-  - Homebrew: the `yt-dlp` formula depends on `deno`.
+  - Homebrew: the `yt-dlp` formula depends on `deno` **and `python@3.14`** (`brew deps yt-dlp`), so it is excluded. The complete, current per-platform trace is [setup-dependencies.md](setup-dependencies.md); it supersedes the setup bullets in this list.
 
 ## 3. Data model and behavior
 
@@ -137,7 +163,7 @@ Word     { word, start, end, probability }
 
 | # | Start | Operation | Result | Governing |
 |---|---|---|---|---|
-| 1 | Fresh Mac with Homebrew, no Python change | `./setup.sh` | brew installs missing `rust cmake ffmpeg yt-dlp deno`; build; `download-model` puts `ggml-large-v3-turbo.bin` in `~/.cache/huggingface/hub`; skill linked in `~/.agents/skills` and `~/.claude/skills`; nothing Python-related installed | U1.2, U2, U3, U5, U6, U9 |
+| 1 | Fresh Mac with Homebrew | `./setup.sh` | brew installs whichever of `rust cmake ffmpeg deno` are missing; the official `yt-dlp_macos` goes to `/usr/local/bin/yt-dlp` (sudo) if `yt-dlp` is absent; build (bindings generated with the Command Line Tools' libclang); `cargo run -- download-model` puts `ggml-large-v3-turbo.bin` in `~/.cache/huggingface/hub`; skill linked in `~/.agents/skills` and `~/.claude/skills`; no Python installed | U1.2, U2, U3, U5, U6, U9 |
 | 2 | After case 1, offline | `cargo run -- rec.mp3 --language ja --start 0.3 --end 20.3 --transcribe --output t.txt` | model resolved from cache; `t.txt` + `t.txt.json`, times in original-source seconds (offset 0.3) | U8, U9, README:111 |
 | 3 | Any | `--language zulu --transcribe` | error "Whisper does not support language code zu"; no outputs; no download | README:111 |
 | 4 | Tiny model | `--language cantonese --whisper-model ggml-tiny.bin --transcribe` | error "ggml-tiny.bin does not support language yue"; no outputs | README:111 |
@@ -145,8 +171,10 @@ Word     { word, start, end, probability }
 | 6 | `t.txt` exists | `--transcribe --output t.txt` | "already exists"; nothing replaced or downloaded | README:55 |
 | 7 | Arabic pieces `" ل" "اب" "ت" "ح" "ب" " ب" "لا"` | `words(…, "ar")` | `" لابتحب"` (start = t0 of `" ل"`, end = t1 of `"ب"`, p = mean of 5), `" بلا"` | mlx rule (preserved behavior) |
 | 8 | Japanese pieces where one character's UTF-8 bytes span two tokens | `words(…, "ja")` | those two tokens form one word; every complete character group is its own word | mlx rule |
-| 9 | Fresh Debian/Ubuntu | `./setup.sh` | apt installs missing `ffmpeg build-essential cmake unzip`; rustup, Deno installer, `yt-dlp_linux` → `~/.local/bin/yt-dlp`; build; download; skills; no Python installed; transcription runs on CPU | U2, U6, U8 |
-| 10 | Windows | `setup.ps1` | winget `yt-dlp.yt-dlp` (+Deno, FFmpeg), `Kitware.CMake`; rustup-init (offers VS C++); build; download; skill junctions in both dirs | U2, U3 |
+| 9 | Fresh Debian/Ubuntu on x86_64 | `./setup.sh` | `sudo apt-get install -y --no-install-recommends ca-certificates curl unzip build-essential cmake libclang-dev ffmpeg`; rustup (`-y`) if no `cargo`; Deno installer (`-y`) if no `deno`; `yt-dlp_linux` → `/usr/local/bin/yt-dlp` (sudo) if absent; build; download; skills; no Python installed; transcription runs on CPU | U2, U6, U8 |
+| 10 | Windows on x64 | `setup.ps1` | winget `yt-dlp.yt-dlp` (brings `DenoLand.Deno`, `yt-dlp.FFmpeg`) if no `yt-dlp`; `Kitware.CMake` if no `cmake`; `LLVM.LLVM` if `%ProgramFiles%\LLVM\bin\libclang.dll` is absent; rustup-init if no `cargo` (offers Visual Studio C++); build; download; skill junctions in both dirs | U2, U3, U6 |
+| 11 | Linux not on x86_64, or without `apt-get` | `./setup.sh` | exits 1 before installing anything: "setup.sh supports macOS with Homebrew and Debian/Ubuntu on x86_64" | targets answer |
+| 12 | Windows not on x64 | `setup.ps1` | throws before installing anything: "setup.ps1 supports Windows on x64" | targets answer |
 
 ## 4. Phases
 
@@ -202,37 +230,54 @@ Work happens on branch `native-transcription-setup` (the repo is on `main`). Eac
 
 ### Phase 2 — Setup scripts and README rewrite
 
-**Outcome:** one entry point per OS installs the tools, builds, downloads the Whisper model into the HF cache, and installs the skill in both locations; nothing installs Python. The README explains setup and usage.
+**Basis:** every dependency below is traced in [setup-dependencies.md](setup-dependencies.md) (sections B, C, E). Targets: macOS with Homebrew, Debian/Ubuntu on x86_64, Windows on x64.
+
+**Outcome:** on each target, one entry point installs only what is missing, builds, runs the app's `download-model`, and installs the skill in both locations. Nothing installs Python. GitHub Actions runs setup and the tests on all three targets. The README explains setup and usage.
+
+**Data model / behavior changes**
+
+- whisper.cpp bindings are generated by bindgen on every platform; `.cargo/config.toml` goes. Why: the bundled bindings fail to compile for Windows (O2: `208_usize - 216_usize`, Size of `_IO_FILE`), and Cargo `[env]` cannot be set per target. Generated bindings build on macOS (O8) and Debian/Ubuntu with `libclang-dev` (C.4). Consequence: libclang is a build requirement everywhere (Command Line Tools / `libclang-dev` / `LLVM.LLVM`).
+- yt-dlp is always the official standalone executable, never a Python package (setup-dependencies.md "Why Python is excluded").
 
 **Change inventory**
 
 | File | Change | Author |
 |---|---|---|
-| `setup.sh` (rewrite of the uncommitted draft) | `cd "$repo"`. Mac: brew missing of `cargo=rust cmake ffmpeg yt-dlp deno`. Linux: apt or pacman missing of `ffmpeg`, C/C++ toolchain (`build-essential` / `base-devel`), `cmake`, `unzip`; rustup and the Deno installer if absent; `yt-dlp_linux` → `~/.local/bin/yt-dlp`; other distros print the missing list and exit. All: `cargo build`, `cargo run --quiet -- download-model`, `scripts/install-skill.sh` for `~/.agents/skills` and `~/.claude/skills`. No `python` anywhere | me |
-| `setup.ps1` (rewrite of the uncommitted draft) | winget `yt-dlp.yt-dlp` and `Kitware.CMake` if absent; rustup-init if no `cargo`; refresh PATH; `cargo build`; `cargo run --quiet -- download-model`; skill junctions in both dirs (same refuse-to-replace rule as `install-skill.sh`) | me |
-| `README.md` | rewrite with these sections: what it does; Setup (`./setup.sh` / `setup.ps1`, what each installs, manual equivalents); CLI usage (local file and YouTube URL with each preset `formats/default.json`, `joining-then-timing.json`, `shorter.json`, `--chunk-target-size-seconds`, `--start/--end`, sequence-only, metadata, transcription, `download-model`, Anki); Format file reference; Skill usage (install, invoke `/language-jutsu-listening` in Claude Code and `$language-jutsu-listening` in Codex, the options from SKILL.md "Understand the learning request": level, session time, chunk size and pace, supplemental materials, listening goal, content and familiarity, interaction; plus Anki flashcards (new or existing deck) and reminders, with example prompts); Languages; Development checks. Existing accurate reference material is kept, reorganized under these sections | me |
+| `.cargo/config.toml` | **deleted** (user: "Ok. Delete."); deletion staged, to be committed with Phase 2 | me |
+| `setup.sh` (rewrite of the uncommitted draft) | `cd "$repo"`; PATH gets `~/.cargo/bin` and `~/.deno/bin` for this run. **Darwin:** Homebrew required; `brew install` whichever of `cargo=rust cmake=cmake ffmpeg=ffmpeg deno=deno` are missing; if `yt-dlp` is absent: `sudo mkdir -p /usr/local/bin`, `sudo curl -fL …/releases/latest/download/yt-dlp_macos -o /usr/local/bin/yt-dlp`, `sudo chmod 755`. **Linux:** requires `apt-get` and `uname -m` = `x86_64`, else exit 1 with the supported-systems message; `sudo apt-get update`; `sudo apt-get install -y --no-install-recommends ca-certificates curl unzip build-essential cmake libclang-dev ffmpeg`; `curl … sh.rustup.rs \| sh -s -- -y` if no `cargo`; `curl … deno.land/install.sh \| sh -s -- -y` if no `deno` (`-y` adds Deno to the shell configs; without a terminal the installer skips that step); `yt-dlp_linux` → `/usr/local/bin/yt-dlp` as above if absent. **Other systems:** exit 1 with the message. **All:** `cargo build`; `cargo run --quiet -- download-model`; `scripts/install-skill.sh "$HOME/.agents/skills"` and `"$HOME/.claude/skills"`. No `python` anywhere | me |
+| `setup.ps1` (rewrite of the uncommitted draft) | Throws unless `$env:PROCESSOR_ARCHITECTURE -eq 'AMD64'`. `winget install --source winget --exact --id <id> --accept-source-agreements --accept-package-agreements` (throws on a nonzero exit) for `yt-dlp.yt-dlp` if no `yt-dlp`, `Kitware.CMake` if no `cmake`, `LLVM.LLVM` if `$env:ProgramFiles\LLVM\bin\libclang.dll` is absent; rustup-init (`win.rustup.rs/x86_64`) if no `cargo`; refresh PATH (Machine + User + `~\.cargo\bin`); `cargo build`; `cargo run --quiet -- download-model`; skill junctions in both dirs (refuse to replace a different target) | me |
+| `README.md` | Keep the rewritten README (sections: what it does; Setup; Command-line usage; Format files; Guided listening skill; Languages; Validation status; Design and research; Development checks). Rewrite the Setup section from table E: supported systems; what each script installs, including libclang and `/usr/local/bin/yt-dlp`; manual equivalents; unsupported systems stop with a message. Remove "`setup.ps1` has not yet been run on a Windows machine" once CI runs it | me |
+| `.github/workflows/setup.yml` (create) | Trigger: `push` to `native-transcription-setup`, and `workflow_dispatch`. **macos** (`macos-15`): `./setup.sh`, `cargo test`, `cargo run -- tests/fixtures/jfk.wav --language en --transcribe --output jfk.txt`. **linux** (`ubuntu-24.04`, matrix `ubuntu:24.04`, `debian:12`): in a fresh container, as a non-root user with passwordless sudo, `./setup.sh`, `command -v python3` must fail, then `cargo test` and the jfk transcription. **windows** (`windows-2025`): Microsoft's documented winget bootstrap (`Install-Module Microsoft.WinGet.Client -Force`, `Repair-WinGetPackageManager -AllUsers`; the runner image lists no winget), `./setup.ps1`, `cargo test`, the jfk transcription. Each job also runs `yt-dlp --version` and `deno --version` | me |
+| `docs/current-plans/NATIVE_TRANSCRIPTION_IMPLEMENTATION_STATUS.md` | Phase 2 results | me |
+
+**Dependencies:** Phase 1 (`download-model`, native transcription). Pushing the branch to `origin` (github.com/nomicflux/language-jutsu) is authorized by the GitHub Actions answer: "Publishes the branch and adds a CI file."
 
 **Verification**
 
-- `sh -n setup.sh`; `shellcheck setup.sh`. The only expected notices are the intentional word-split of package lists (SC2086) and the `CDPATH=` idiom shared with `install-skill.sh` (SC1007).
-- Run `./setup.sh` on this Mac end to end; record the output. Confirm: no Python installed or invoked; the model exists under `~/.cache/huggingface/hub/models--ggerganov--whisper.cpp`; skill links exist in both dirs (install-skill reports "Installed" or "Already installed").
-- Run every README CLI example as written (file and URL, each format, transcription, Anki) and record exit codes and outputs.
-- Linux: run `setup.sh` in a Debian container if Docker is available on this machine; otherwise report it as unexecuted. Windows: not executable here; report unexecuted.
-- `cargo fmt --check`, `cargo test`, `cargo clippy --all-targets -- -D warnings` remain green.
+- Local (Mac):
+  - `sh -n setup.sh` and `shellcheck setup.sh` (expected notices: SC1007 `CDPATH=`, SC2086 package-list word split).
+  - `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, all with generated bindings after the deletion.
+  - `./setup.sh`, with the output recorded. `brew list` before and after shows no new Python formula. The model is under `~/.cache/huggingface/hub/models--ggerganov--whisper.cpp`; both skill links exist.
+  - Every README CLI example, run as written in a scratch copy.
+- CI: all four jobs (macos, linux × 2, windows) green, with each run URL and its key log lines (setup completion, `Model cached:`, the test result lines, the transcription output, the `python3` check on Linux) recorded in the status file.
+- YouTube URL runs are verified locally on the Mac (done earlier and repeated in the README examples). YouTube URL runs from GitHub's datacenter runners are not part of the CI gate, because YouTube may demand sign-in from those addresses; CI verifies that `yt-dlp` and `deno` are installed and on PATH.
 
-**Boundary state:** a new user runs one script and has a working CLI, model, and skill; the README documents setup, CLI, and skill usage.
+**Boundary state:** a new user on macOS (Homebrew), Debian/Ubuntu x86_64 or Windows x64 runs one script and has a working CLI, model and skill, with no Python installed by setup. Other systems get a message naming the supported ones. CI proves each target on every push.
 
 ## 5. Requirement → behavior → phase → check
 
 | Req | Behavior | Phase | Check that fails if absent |
 |---|---|---|---|
 | U1.1 README rewrite: setup, CLI (files, URLs, formats), skill options | README sections in Phase 2 | 2 | README examples executed; section review against SKILL.md list |
-| U1.2 setup script, single entry, downloads backends, not stored on GitHub | `setup.sh` / `setup.ps1`; whisper.cpp built from crates; model in HF cache (outside repo) | 2 (1 supplies `download-model`) | Mac end-to-end setup run; `git status` shows no model files |
-| U2 Homebrew for Mac; Windows and Linux options | brew / apt / pacman / winget paths | 2 | Mac run; Linux container run if available; Windows reported unexecuted |
-| U3 Both | install-skill to `~/.agents/skills` and `~/.claude/skills`; ps1 junctions to both | 2 | links present after Mac run |
-| U4 Whisper only | setup downloads only the Whisper model | 2 | setup script contents; Mac run output |
-| U5 HF cache | hf-hub default cache | 1, 2 | test (g); model path under `~/.cache/huggingface/hub` |
-| U6 no Python install | no Python in scripts or app | 1, 2 | grep check; script contents |
+| U1.2 setup script, single entry, downloads backends, not stored on GitHub | `setup.sh` / `setup.ps1`; whisper.cpp built from crates; model in HF cache (outside repo) | 2 (1 supplies `download-model`) | Mac setup run; CI jobs; `git status` shows no model files |
+| U2 Homebrew for Mac; Windows and Linux options | brew (Mac), apt (Debian/Ubuntu x86_64), winget (Windows x64); scope per "a user could use this from a non-mac system" | 2 | Mac run; CI macos, linux (ubuntu:24.04, debian:12), windows jobs |
+| U3 Both | install-skill to `~/.agents/skills` and `~/.claude/skills`; ps1 junctions to both | 2 | links present after Mac run; CI setup output "Installed:" twice |
+| U4 Whisper only | setup downloads only the Whisper model | 2 | script contents; setup output |
+| U5 HF cache | hf-hub default cache | 1, 2 | test (g); `Model cached:` path under the HF cache in every run |
+| U6 no Python install | standalone yt-dlp everywhere; `--no-install-recommends`; no Homebrew `yt-dlp` | 2 | Linux CI `command -v python3` fails after setup; Mac `brew list` diff; script contents |
+| "THE SETUP SCRIPT SHOULD BE CALLING THE DOWNLOAD-MODEL IN THE APP" | `cargo run --quiet -- download-model` in both scripts | 2 | `Model cached:` in every setup run |
+| "TRACE DEPENDENCIES" / "WE FIGURE THIS OUT IN PLANNING" | setup-dependencies.md (every build/runtime dependency per target, with evidence) | plan | table complete before Phase 2 starts |
+| GitHub Actions answer | `.github/workflows/setup.yml`, branch pushed | 2 | four green jobs |
 | U8 native code | whisper-rs in-process | 1 | integration tests (a)–(e) |
 | U9 HF cache + subcommand | `download-model`; `--transcribe` uses the cache by default | 1 | test (g); offline artifact run |
 | U10 tests 1 & 2 | unit and real-tiny integration tests | 1 | `cargo test` |
