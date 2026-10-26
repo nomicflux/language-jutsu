@@ -34,7 +34,7 @@ In PowerShell:
 powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
-Installs with winget: `yt-dlp.yt-dlp` if `yt-dlp` is missing (its package also installs Deno and FFmpeg with ffprobe), `Kitware.CMake` if `cmake` is missing, and `LLVM.LLVM` (libclang) if `C:\Program Files\LLVM\bin\libclang.dll` is missing. Runs [rustup-init](https://rustup.rs) if `cargo` is missing; rustup offers to install the Visual Studio C++ build tools. The skill is linked with directory junctions. `setup.ps1` has not yet been run on a Windows machine.
+Installs with winget: `yt-dlp.yt-dlp` if `yt-dlp` is missing (its package also installs Deno and FFmpeg with ffprobe), `Kitware.CMake` if `cmake` is missing, and `LLVM.LLVM` (libclang) if `C:\Program Files\LLVM\bin\libclang.dll` is missing. Runs [rustup-init](https://rustup.rs) if `cargo` is missing; rustup offers to install the Visual Studio C++ build tools. The skill is linked with directory junctions.
 
 ### What every setup does
 

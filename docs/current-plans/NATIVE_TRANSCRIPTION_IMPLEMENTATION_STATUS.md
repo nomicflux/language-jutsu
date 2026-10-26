@@ -32,7 +32,7 @@
 - YouTube `mK-xzqnJmSQ --start 03:00 --end 03:10 --transcribe` → exit 0; offset 180.0; segments 180.0–190.0.
 - The grep for `whisper-python|whisper_python|mlx_whisper|mlx-whisper|mlx whisper` over `src tests scripts skills README.md design Cargo.toml .cargo` returns no matches.
 
-## Phase 2 — Setup scripts and README rewrite: in progress, CI pending (2026-10-26)
+## Phase 2 — Setup scripts and README rewrite: complete (2026-10-26)
 
 ### Second attempt (the replanned Phase 2)
 
@@ -61,6 +61,23 @@ CI run [40376744569](https://github.com/nomicflux/language-jutsu/actions/runs/40
 - Tests: per the hf-hub maintainer on #115 ("use a setUp part in your unit tests to make sure the model is only downloaded once"), `cached_model()` runs `download-model ggml-tiny.bin` once through a `OnceLock`, and every model-using test waits on it.
 - `cargo fmt --check` 0; `cargo clippy --all-targets -- -D warnings` 0; `cargo test` 73 passed (2 + 2 + 57 + 4 + 8).
 - `HF_HUB_CACHE=<empty> cargo test --test transcription`: 8 passed, with one download into the empty cache.
+
+
+### Final CI run
+
+[40408249024](https://github.com/nomicflux/language-jutsu/actions/runs/40408249024) (commit 1bd439a): all four jobs green.
+
+| Job | Setup | `Model cached:` | `cargo test` | jfk transcription | Tools |
+|---|---|---|---|---|---|
+| macos (macos-15) | `Setup complete.`; `Installed:` × 2 | `/Users/runner/.cache/huggingface/hub/…/5359861c…/ggml-large-v3-turbo.bin` | 2, 2, 57, 4, 8 passed | "And so, my fellow Americans, ask not what your country can do for you, ask what you can do for your country." | yt-dlp 2026.10.21; deno 2.9.6 (already on the runner) |
+| linux (ubuntu:24.04) | `Setup complete.`; `Installed:` × 2 | `/home/user/.cache/huggingface/hub/…/5359861c…` | 2, 2, 57, 4, 8 passed | same text | yt-dlp 2026.10.21; deno 2.9.8 |
+| linux (debian:12) | `Setup complete.`; `Installed:` × 2 | `/home/user/.cache/huggingface/hub/…/5359861c…` | 2, 2, 57, 4, 8 passed | same text | yt-dlp 2026.10.21; deno 2.9.8 |
+| windows (windows-2025) | winget `Successfully installed` × 3 (Deno, FFmpeg, yt-dlp); `Setup complete.`; `Installed:` × 2 (junctions) | `C:\Users\runneradmin\.cache\huggingface\hub\…\5359861c…\ggml-large-v3-turbo.bin` | 2, 2, 53, 0, 8 passed (Unix-only tests gated) | same text | yt-dlp 2026.10.21; deno 2.9.8 |
+
+- Linux `python3` check: the trace shows `+ command -v python3` with no output, and the job continued (`if command -v python3; then … exit 1; fi`), so no Python was installed.
+- README CLI examples rerun after the hf-hub change, in a fresh copy of the tracked files: all 17 exited 0.
+- README: "`setup.ps1` has not yet been run on a Windows machine" removed.
+- Windows `cargo test --test transcription` took 1192 s (whisper.cpp on the runner's CPU).
 
 ### First attempt
 
