@@ -326,6 +326,22 @@ The skill settles these from your request and asks short follow-ups only where a
 
 Ask for flashcards and say whether to **create a new deck** or **add to an existing deck**. For an existing deck, name it and provide an export or access. The cards cover every vocabulary and grammar point taught in the lesson, as Vocab, Grammar and Listening cards with the lesson's processed audio, packaged as an `.apkg` to import with Anki's **File → Import**.
 
+### iBroadcast playlists (experimental)
+
+**Experimental: automation requires browser access.** The agent uses your signed-in [iBroadcast web player](https://media.ibroadcast.com/) to perform user actions such as uploading files and creating playlists. This uses browser control, not iBroadcast API access; no developer app, API key or OAuth setup is required.
+
+To enable it:
+
+1. Create an iBroadcast account if needed, then sign in to the web player in a browser your agent can control, including file uploads.
+2. Install the iBroadcast phone app and sign in to the same account.
+3. Invoke the listening skill and ask: “Set up iBroadcast playlists for my lessons, including existing lessons.” Confirm the resulting playlists on your phone. If they are missing, use **Profile → Settings → Library → Refresh Library Now**.
+
+The skill uploads only the complete, fully processed final audio identified in each lesson's Markdown. Final files use `<nn>-<topic>.mp3`, starting at `01` in lesson order; scratch, investigation, setup, card and supplemental clips are excluded. New lessons render directly to MP3; only older final WAVs need conversion with `mp3-copy`.
+
+You get one playlist per lesson and one per language, combining dialects and placing the newest lesson first. After setup, preparing, revising or superseding lessons through the skill updates the affected playlists.
+
+Without browser control, the skill provides the final MP3 paths and manual upload and playlist instructions. See the [iBroadcast workflow](skills/language-jutsu-listening/references/ibroadcast.md) for details.
+
 ### Reminders
 
 On request, the skill sets up two separate daily reminders in the same chat: one at 17:00 to choose and prepare tomorrow's lesson, and one at 12:00 to start today's, in America/Chicago. Each time is editable independently. Installing the skill does not activate them. They use the desktop app's scheduled tasks; see [scheduling.md](skills/language-jutsu-listening/references/scheduling.md).
