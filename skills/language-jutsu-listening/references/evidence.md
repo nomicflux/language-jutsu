@@ -22,7 +22,7 @@ Apply supported corrections consistently to dependent translations, vocabulary, 
 
 Use the retained recording and relevant surrounding turns first. When a new decode can resolve a specific problem, Jutsu can transcribe its enclosing exchange without the candidate answer in the prompt. A repeat decode is another estimate, not independent proof.
 
-The existing `scripts/compare_audio.py` is an optional Qwen2-Audio comparison using original-speed contextual WAV. Use the configured runtime and model paths from `listening/settings.md` when this comparison is needed. Do not write a replacement tool, inspect its implementation or set up another model as a routine lesson stage. This helper has failed on some Arabic recordings; repeating a failed comparison does not resolve uncertainty.
+The existing `scripts/compare_audio.py` is an optional Qwen2-Audio comparison using original-speed contextual WAV. Do not write a replacement tool, inspect its implementation or set up another model as a routine lesson stage. This helper has failed on some Arabic recordings; repeating a failed comparison does not resolve uncertainty.
 
 Prepare its input through Jutsu with the bundled one-play format, keeping enough context for the disputed wording:
 

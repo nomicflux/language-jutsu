@@ -192,7 +192,13 @@ fn language_names_reach_whisper_as_codes_and_round_trip_in_metadata() {
         ("mandarin", "zh"),
         ("korean", "ko"),
         ("farsi", "fa"),
+        ("indonesian", "id"),
+        ("bengali", "bn"),
+        ("hausa", "ha"),
+        ("tamil", "ta"),
         ("hindi", "hi"),
+        ("turkish", "tr"),
+        ("vietnamese", "vi"),
         ("kiswahili", "sw"),
     ] {
         let json = Run::new("jfk.wav", name, MODEL, &["--end", "3"]).metadata();

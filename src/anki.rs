@@ -76,8 +76,7 @@ struct Card {
     kind: Kind,
     prompt: String,
     answer: String,
-    sentence: String,
-    context_audio: PathBuf,
+    context: CardContext,
     #[serde(default)]
     front: Option<String>,
     #[serde(default)]
@@ -92,8 +91,14 @@ struct Card {
     explanation: String,
     #[serde(default)]
     situation: String,
-    #[serde(default)]
-    listening_audio: Option<PathBuf>,
+}
+
+/// One source chunk, represented together as audio and its full corresponding text.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CardContext {
+    audio: PathBuf,
+    sentence: String,
 }
 
 const FIELDS: [&str; 14] = [
@@ -197,33 +202,24 @@ fn make_note(
         ("key", &card.key),
         ("prompt", &card.prompt),
         ("answer", &card.answer),
-        ("sentence", &card.sentence),
+        ("context.sentence", &card.context.sentence),
     ] {
         required(name, value)?;
     }
-    if card.kind != Kind::Listening && card.listening_audio.is_some() {
-        return Err("listening_audio is only used for listening cards".into());
-    }
-    let sentence = marked(&card.sentence, &card.marks)?;
+    let sentence = marked(&card.context.sentence, &card.marks)?;
     let front = match &card.front {
         Some(text) => escape(text),
         None if card.kind == Kind::Listening => String::new(),
         None => sentence.clone(),
     };
-    let context_audio = sound(base, &card.context_audio, media)?;
+    let context_audio = sound(base, &card.context.audio, media)?;
     let listening_audio = if card.kind == Kind::Listening {
-        sound(
-            base,
-            card.listening_audio
-                .as_deref()
-                .unwrap_or(&card.context_audio),
-            media,
-        )?
+        context_audio.clone()
     } else {
         String::new()
     };
     // The complete transcript is already shown as Sentence on a listening back.
-    let answer = if card.kind == Kind::Listening && card.answer == card.sentence {
+    let answer = if card.kind == Kind::Listening && card.answer == card.context.sentence {
         String::new()
     } else {
         escape(&card.answer)

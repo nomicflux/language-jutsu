@@ -16,7 +16,7 @@ The saved prompts explicitly invoke `$language-jutsu-listening` and contain the 
 
 > Use $language-jutsu-listening with lesson root [resolved absolute path]. This is the daily start reminder. Resolve today's calendar date in America/Chicago and read that date's task.md. Invite me to begin the prepared lesson using its purpose, approximate session time and first activity; if already started, resume the pending learner turn. Use the established instruction language for directions and the target language for practice conversations. If absent or unready, state the actual missing preparation and elicit what is needed without inventing content or presenting a failed lesson. Do not rerun completed preparation merely to remind me.
 
-These are requested daily reminders, so each run produces its reminder even if files are unchanged. Configure notification preferences through the tool's supported fields; do not put notification-policy controls in the saved prompt. Preserve later user changes independently for each reminder. Save both returned IDs, times, timezone, and lesson root in `listening/settings.md`. Verify the two returned next occurrences in Chicago time and report any timezone or tool limitation instead of silently changing the schedule.
+These are requested daily reminders, so each run produces its reminder even if files are unchanged. Configure notification preferences through the tool's supported fields; do not put notification-policy controls in the saved prompt. Preserve later user changes independently for each reminder. Verify the two returned next occurrences in Chicago time and report any timezone or tool limitation instead of silently changing the schedule.
 
 ## Keep date handoff concrete
 

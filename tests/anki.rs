@@ -6,8 +6,9 @@ use tempfile::TempDir;
 fn manifest() -> Value {
     let shared = json!({
         "key": "keys", "kind": "vocab", "prompt": "What does keys mean?",
-        "answer": "llaves", "sentence": "She has been looking for her keys.",
-        "marks": ["keys"], "context_audio": "context.wav",
+        "answer": "llaves",
+        "context": {"audio": "context.wav", "sentence": "She has been looking for her keys."},
+        "marks": ["keys"],
         "translation": "Ella ha estado buscando sus llaves.",
         "explanation": "Literal <text> & quotes: \"test\"."
     });
@@ -22,15 +23,14 @@ fn manifest() -> Value {
     listening["key"] = json!("whole");
     listening["kind"] = json!("listening");
     listening["prompt"] = json!("What was said?");
-    listening["answer"] = shared["sentence"].clone();
+    listening["answer"] = shared["context"]["sentence"].clone();
     listening["marks"] = json!([]);
     let mut cloze = listening.clone();
     cloze["key"] = json!("heard-for");
     cloze["prompt"] = json!("Which word did you hear?");
-    cloze["front"] = json!("Looking ___ her keys.");
+    cloze["front"] = json!("She has been looking ___ her keys.");
     cloze["answer"] = json!("for");
     cloze["marks"] = json!(["for"]);
-    cloze["listening_audio"] = json!("phrase.wav");
     json!({"deck_id": 123456789, "deck_name": "Builder test", "language": "en",
         "direction": "ltr", "cards": [shared, grammar, listening, cloze]})
 }
@@ -99,7 +99,6 @@ fn packages_three_types_embedded_media_and_stable_revision_identities() {
     let root = temp.path();
     // The builder packages bytes; audio processing is tested by the audio CLI tests.
     fs::write(root.join("context.wav"), b"context audio bytes").unwrap();
-    fs::write(root.join("phrase.wav"), b"phrase audio bytes").unwrap();
     let mut value = manifest();
     let result = run(root, &value, "first.apkg");
     assert!(
@@ -111,10 +110,7 @@ fn packages_three_types_embedded_media_and_stable_revision_identities() {
     media.sort();
     assert_eq!(
         media,
-        vec![
-            ("context.wav".into(), b"context audio bytes".to_vec()),
-            ("phrase.wav".into(), b"phrase audio bytes".to_vec())
-        ]
+        vec![("context.wav".into(), b"context audio bytes".to_vec())]
     );
     assert_eq!(
         db.query_row("SELECT count(*) FROM cards WHERE did=123456789", [], |r| {
@@ -127,6 +123,7 @@ fn packages_three_types_embedded_media_and_stable_revision_identities() {
     assert_eq!(first.len(), 4);
     let vocab = &first[0].1;
     assert_eq!(vocab[2], "She has been looking for her <b>keys</b>.");
+    assert_eq!(vocab[5], "She has been looking for her <b>keys</b>.");
     assert_eq!(
         vocab[8],
         "Literal &lt;text&gt; &amp; quotes: &quot;test&quot;."
@@ -139,8 +136,13 @@ fn packages_three_types_embedded_media_and_stable_revision_identities() {
     );
     assert_eq!(first[2].1[2], ""); // Full listening hides the transcript.
     assert_eq!(first[2].1[4], ""); // Full sentence appears once on the back.
-    assert_eq!(first[3].1[2], "Looking ___ her keys.");
-    assert_eq!(first[3].1[10], "[sound:phrase.wav]");
+    assert_eq!(first[2].1[5], "She has been looking for her keys.");
+    assert_eq!(first[3].1[2], "She has been looking ___ her keys.");
+    assert_eq!(first[3].1[5], "She has been looking <b>for</b> her keys.");
+    for (_, fields) in &first[2..] {
+        assert_eq!(fields[9], "[sound:context.wav]");
+        assert_eq!(fields[10], fields[9]); // Both sides use the context object's audio.
+    }
     let models: String = db
         .query_row("SELECT models FROM col", [], |r| r.get(0))
         .unwrap();
@@ -176,10 +178,13 @@ fn invalid_inputs_publish_nothing_and_existing_output_is_preserved() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     fs::write(root.join("context.wav"), b"context").unwrap();
-    fs::write(root.join("phrase.wav"), b"phrase").unwrap();
     for (field, invalid, expected) in [
         ("kind", json!("other"), "unknown variant"),
-        ("context_audio", json!("missing.wav"), "card \"keys\""),
+        (
+            "context",
+            json!({"audio": "missing.wav", "sentence": "She has been looking for her keys."}),
+            "card \"keys\"",
+        ),
         ("marks", json!(["absent"]), "must occur exactly once"),
         ("marks", json!(["keys", "her keys"]), "must not overlap"),
         ("answer", json!(""), "answer must not be empty"),
@@ -187,11 +192,6 @@ fn invalid_inputs_publish_nothing_and_existing_output_is_preserved() {
             "explanation",
             json!("bad\u{1f}field"),
             "U+001F field separator",
-        ),
-        (
-            "listening_audio",
-            json!("phrase.wav"),
-            "only used for listening",
         ),
         ("typo", json!(true), "unknown field"),
     ] {
@@ -214,7 +214,7 @@ fn invalid_inputs_publish_nothing_and_existing_output_is_preserved() {
     fs::create_dir(root.join("other")).unwrap();
     fs::write(root.join("other/context.wav"), b"different").unwrap();
     value = manifest();
-    value["cards"][1]["context_audio"] = json!("other/context.wav");
+    value["cards"][1]["context"]["audio"] = json!("other/context.wav");
     let result = run(root, &value, "collision.apkg");
     assert!(String::from_utf8_lossy(&result.stderr).contains("share basename"));
     assert!(!root.join("collision.apkg").exists());
@@ -222,4 +222,46 @@ fn invalid_inputs_publish_nothing_and_existing_output_is_preserved() {
     let result = run(root, &manifest(), "existing.apkg");
     assert!(!result.status.success());
     assert_eq!(fs::read(root.join("existing.apkg")).unwrap(), b"keep this");
+}
+
+#[test]
+fn context_requires_audio_and_sentence_together_and_rejects_separate_fields() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    fs::write(root.join("context.wav"), b"context").unwrap();
+    for (context, expected) in [
+        (json!({"audio": "context.wav"}), "missing field `sentence`"),
+        (
+            json!({"sentence": "She has keys."}),
+            "missing field `audio`",
+        ),
+        (
+            json!({"audio": "context.wav", "sentence": " "}),
+            "context.sentence must not be empty",
+        ),
+    ] {
+        let mut value = manifest();
+        value["cards"][0]["context"] = context;
+        let result = run(root, &value, "incomplete.apkg");
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains(expected),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(!root.join("incomplete.apkg").exists());
+    }
+    for field in ["sentence", "context_audio", "listening_audio"] {
+        let mut value = manifest();
+        // A separate field is rejected even when a complete context is present.
+        value["cards"][2][field] = json!("separate");
+        let result = run(root, &value, "separate.apkg");
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains(&format!("unknown field `{field}`")),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(!root.join("separate.apkg").exists());
+    }
 }

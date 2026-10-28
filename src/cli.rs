@@ -39,7 +39,8 @@ pub(crate) struct Args {
     /// Source language code or name.
     ///
     /// Named choices: french (fr), italian (it), german (de), mandarin (zh),
-    /// cantonese (yue), korean (ko), farsi/persian (fa), hindi (hi),
+    /// cantonese (yue), korean (ko), farsi/persian (fa), indonesian (id),
+    /// bengali (bn), hausa (ha), tamil (ta), hindi (hi), turkish (tr), vietnamese (vi),
     /// kiswahili/swahili (sw), isizulu/zulu (zu), isixhosa/xhosa (xh), sesotho (st).
     /// Other nonempty labels remain valid for audio processing.
     /// Transcription depends on Whisper's language and model support.
@@ -99,7 +100,8 @@ pub(crate) struct Args {
 pub(crate) enum Command {
     /// Package authored vocabulary, grammar and listening cards with audio for Anki.
     Anki {
-        /// Card manifest JSON; relative media paths resolve beside this file.
+        /// Card manifest JSON; each card requires context: {audio, sentence} for one chunk.
+        /// Relative audio paths resolve beside this file.
         input: PathBuf,
         /// New .apkg file; existing files are never replaced.
         #[arg(long)]
@@ -131,7 +133,13 @@ fn language_code(value: &str) -> Result<String, String> {
         "yue" | "cantonese" => "yue",
         "ko" | "korean" => "ko",
         "fa" | "farsi" | "persian" => "fa",
+        "id" | "indonesian" => "id",
+        "bn" | "bengali" => "bn",
+        "ha" | "hausa" => "ha",
+        "ta" | "tamil" => "ta",
         "hi" | "hindi" => "hi",
+        "tr" | "turkish" => "tr",
+        "vi" | "vietnamese" => "vi",
         "sw" | "kiswahili" | "swahili" => "sw",
         "zu" | "isizulu" | "zulu" => "zu",
         "xh" | "isixhosa" | "xhosa" => "xh",

@@ -1,10 +1,10 @@
 # Build the processed listening progression
 
-Use the existing Language Jutsu app, saved runtime settings and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
+Use the existing Language Jutsu app and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
 
 ## Get the requested conversation
 
-For discovery, search in the requested language/dialect and topic, open the full publisher/media pages, and inspect the actual candidate recording's transcript/audio evidence. Establish responsive speaker turns, target language without English, topic, dialect, and suitable difficulty. A title or automated language label cannot establish all of these. Reject mismatches and continue the same search, preserving the request.
+For discovery, search for material for the requested lesson, open the publisher/media pages, and inspect the passages you intend to use at original speed, with their transcript for language and context. Determine whether those passages can supply the experience the lesson requires. Titles, automated labels and transcripts alone cannot establish audible qualities.
 
 For supplied content, preserve its recording identity and explicit bounds. If selection is permitted, retain meaningful question/answer exchanges. One recording may supply several players; several recordings may supply a lesson. Assess their combined teaching substance and keep each source identifiable. When a recording conflicts with a requirement that cannot be repaired by an allowed selection, explain the conflict instead of silently changing the source.
 
@@ -26,7 +26,7 @@ For a public publisher/RSS/direct-media URL, resolve the actual audio link from 
 
 ## Produce source-language text
 
-Transcription runs whisper.cpp inside the Jutsu executable. `whisper_model` is a model file in the ggerganov/whisper.cpp Hugging Face repository, `ggml-large-v3-turbo.bin` unless the lesson needs another; Jutsu reads it from the Hugging Face cache and downloads it there when missing. The Jutsu README gives setup. Record the model in `listening/settings.md`. Test the configured runtime by actually transcribing the lesson.
+Transcription runs whisper.cpp inside the Jutsu executable. `whisper_model` is a model file in the ggerganov/whisper.cpp Hugging Face repository, `ggml-large-v3-turbo.bin` unless the lesson needs another; Jutsu reads it from the Hugging Face cache and downloads it there when missing. The Jutsu README gives setup. Test the configured runtime by actually transcribing the lesson.
 
 ```sh
 cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \

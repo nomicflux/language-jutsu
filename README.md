@@ -241,7 +241,7 @@ ffmpeg -f f32le -ar 48000 -ac 2 -i decoded.f32le -c:a pcm_f32le decoded.wav
 cargo run -- anki cards.json --output lesson.apkg
 ```
 
-Packages authored Vocab, Grammar and Listening cards with embedded audio into a new `.apkg`, without accessing a live Anki collection. The JSON manifest supplies deck identity, language, card content and media paths; note identities remain stable across revisions. See the [input format and card requirements](skills/language-jutsu-listening/references/anki.md#package-for-anki).
+Packages authored Vocab, Grammar and Listening cards with embedded audio into a new `.apkg`, without accessing a live Anki collection. Each card submits its source chunk as one `context` object containing `audio` (the recording path) and `sentence` (its full corresponding text). The JSON manifest also supplies deck identity, language and card content; note identities remain stable across revisions. See the [input format and card requirements](skills/language-jutsu-listening/references/anki.md#package-for-anki).
 
 ### Use a standalone binary
 
@@ -339,7 +339,7 @@ and make a new Anki deck from the lesson.
 /language-jutsu-listening Set up my daily preparation and start reminders.
 ```
 
-Lessons are saved under `listening/` in the repository (`listening/YYYY-MM-DD/task.md`, with runtime settings in `listening/settings.md`), so a later session resumes from the pending turn.
+Lessons are saved under `listening/` in the repository (`listening/YYYY-MM-DD/task.md`), so a later session resumes from the pending turn.
 
 ## Languages
 
@@ -354,7 +354,13 @@ Pass a code or one of these names to `--language`. Names are case-insensitive an
 | Cantonese | `yue` | Requires a model with the Cantonese token, such as large-v3 or the default large-v3-turbo |
 | Korean | `ko` | Supported by multilingual models |
 | Farsi, Persian | `fa` | Supported by multilingual models |
+| Indonesian | `id` | Supported by multilingual models |
+| Bengali | `bn` | Supported by multilingual models |
+| Hausa | `ha` | Supported by multilingual models |
+| Tamil | `ta` | Supported by multilingual models |
 | Hindi | `hi` | Supported by multilingual models |
+| Turkish | `tr` | Supported by multilingual models |
+| Vietnamese | `vi` | Supported by multilingual models |
 | Kiswahili, Swahili | `sw` | Supported by multilingual models |
 | isiZulu, Zulu | `zu` | Not in the Whisper language table |
 | isiXhosa, Xhosa | `xh` | Not in the Whisper language table |
