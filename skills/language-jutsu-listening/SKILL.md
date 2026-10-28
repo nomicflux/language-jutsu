@@ -1,6 +1,6 @@
 ---
 name: language-jutsu-listening
-description: "Prepare and conduct interactive language lessons built around Language Jutsu-processed conversation audio, with vocabulary, grammar, responsive teaching and optional lesson-based Anki decks. Also supports separate preparation and start reminders."
+description: "Prepare and conduct interactive language lessons built around Language Jutsu-processed conversation audio, with vocabulary, grammar, responsive teaching and optional lesson-based Anki decks. Also supports separate preparation and start reminders, and iBroadcast playlists of final lesson audio."
 ---
 
 # Language Jutsu Listening
@@ -51,7 +51,9 @@ Retain the original audio and provenance, and obtain timed transcription through
 
 Express the learning needs in Jutsu's format JSON: target chunk size, speeds, repetitions, sequencing, joining and gaps. Choose settings that address the difficulties in the actual passage, make its speech understandable and build toward the requested listening ability. Proficiency is an initial calibration, not an automatic prescription for chunk length or amount of support. Let Jutsu calculate the units and play order. Preserve explicitly chosen formats; resolve conflicts in learning terms rather than silently changing them.
 
-For each selected excerpt, use Jutsu's sequence report to settle the format's chunking, joining and estimated listening time before rendering. Pass the source, bounds, chosen format JSON and output path to the CLI and use the finished file it returns. Fit teaching and learner responses around the actual player and measured duration. Source duration, individual chunk size, expanded playback and interactive session time are different quantities. Keep substantive conversation while making practice manageable; neither a long uninterrupted repetition track nor a tiny standalone quiz provides the lesson.
+For each selected excerpt, use Jutsu's sequence report to settle the format's chunking, joining and estimated listening time before rendering. Pass the source, bounds, chosen format JSON and an `.mp3` output path to the CLI. The finished, fully processed MP3 is the lesson player: use that same file for lesson delivery and device access. Fit teaching and learner responses around the actual player and measured duration. Source duration, individual chunk size, expanded playback and interactive session time are different quantities. Keep substantive conversation while making practice manageable; neither a long uninterrupted repetition track nor a tiny standalone quiz provides the lesson.
+
+Name final lesson audio `<nn>-<topic>.mp3`, with `nn` zero-padded to two digits, starting at `01` for each lesson and increasing by one per lesson segment in playback order, for example `01-phone-call.mp3`, `02-lunch-plans.mp3`. Reserve this structure exclusively for final lesson audio. Scratchpad, investigation, setup, check, card, supplemental and superseded audio must use different names, such as `scratch-phone-call.mp3`. A revision keeps its segment number; rename superseded audio outside this pattern and update lesson references.
 
 ## Build the teaching around the processed passages
 
@@ -83,7 +85,7 @@ Review the exact Jutsu output files that will be presented, alongside their sequ
 
 ## Teach through the processed progression
 
-Introduce the situation, learning aim and approximate session time. Provide the relevant notes and context, explain what to attend to in the first processed passage, and present its player with a manageable response invitation. Render local audio as `![descriptive label](/absolute/path/audio.wav)`. Wait for the learner's actual reply; chat cannot detect playback completion.
+Introduce the situation, learning aim and approximate session time. Provide the relevant notes and context, explain what to attend to in the first processed passage, and present its player with a manageable response invitation. Render local audio as `![descriptive label](/absolute/path/01-topic.mp3)`. Wait for the learner's actual reply; chat cannot detect playback completion.
 
 Use each reply to continue the learning work:
 
@@ -102,5 +104,9 @@ Conclude after the learning progression has been carried through, adapting to ac
 Resolve this skill directory through symlinks; the repository is two directories above it. Use its durable `listening/` directory unless the user chose another location.
 
 Maintain `listening/YYYY-MM-DD/task.md`, with separate lesson subdirectories when needed. Save the request and clarifications, content and instruction languages, source/provenance and evidence paths, processed progression and formats, measured player durations, notes and other materials, and exact pending prompt. Keep these current after revisions. Record actual replies, help provided, covered material and the next learning activity. Keep simulated reviews separate from learner responses.
+
+In the processed progression, explicitly identify the final lesson audio: exact file paths, labels, lesson order and measured durations of the complete, fully processed players used by the finished lesson. Keep investigation, setup, source, check, card and supplemental clip references separate from that list. Update the list when a final player is replaced; do not leave superseded players in it.
+
+For requested iBroadcast setup, follow [ibroadcast.md](references/ibroadcast.md), including backfill of existing lessons. When `listening/ibroadcast.md` exists, sync only the final lesson audio after the complete lesson review and final-file record are finished or revised, or remove a superseded lesson. Use the same final MP3s as the lesson; investigation and setup clips are never sync inputs. Record the result in the lesson's `task.md`. Without that setup record, lesson preparation performs no iBroadcast actions.
 
 For separate preparation and start reminders, use [scheduling.md](references/scheduling.md). Installing or testing the skill does not activate reminders. Tomorrow's preparation preserves today's unfinished lesson, and resumption continues from the actual pending turn. A prepared lesson, a completed human session and a user-vetted result are distinct facts.

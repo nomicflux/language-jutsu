@@ -41,7 +41,7 @@ Transcription output is a hypothesis. Establish the wording and meaning from the
 
 ## Render the study passages
 
-For each selected conversational excerpt, give Jutsu a source, excerpt bounds, format JSON and output path. The app finds practice units, generates the play sequence, joins source spans and renders the finished study player. Use that output directly for the lesson. Render multiple excerpts as separate study files when useful; never concatenate them or manually choose practice-unit cuts. The same workflow supplies the opening passage and later practice. If the user explicitly requests no processing, use their requested unprocessed audio instead.
+For each selected conversational excerpt, give Jutsu a source, excerpt bounds, format JSON and an `.mp3` output path. The app finds practice units, generates the play sequence, joins source spans and renders the finished study player directly as MP3. Use that complete output for the lesson and device access; do not routinely render WAV and convert it later. Render multiple excerpts as separate study files when useful; never concatenate them or manually choose practice-unit cuts. The same workflow supplies the opening passage and later practice. If the user explicitly requests no processing, use their requested unprocessed audio instead.
 
 Resolve any explicitly named format in `formats/`. Otherwise, translate the learner's level and preferences into suitable chunk sizes, repetitions, speeds and chaining; clarify unclear learning preferences in natural language before choosing their settings. Read the actual presets and select or adapt one to serve the lesson; a tested example or a file named `shorter` is not a default. Save the chosen JSON in the lesson directory so tomorrow uses the same processing settings. Always pass the format explicitly because omitted lookup is relative to the executable.
 
@@ -54,13 +54,13 @@ cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
 
 cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
   --language "$language" --start "$start" --end "$end" \
-  --format "$format" --output "$lesson/practice.wav" \
+  --format "$format" --output "$lesson/scratch-practice.mp3" \
   --metadata-output "$lesson/practice.json"
 ```
 
-Inspect `plays` and `estimated_seconds` in the sequence-only report, then read `output.pcm_duration_seconds` from render metadata for the full listening activity. Render metadata stores its estimate separately as `sequence.estimated_duration_seconds`; it is not an actual playback checkpoint. Use a new output filename when revising; Jutsu deliberately does not overwrite outputs.
+Inspect `plays` and `estimated_seconds` in the sequence-only report, then read `output.pcm_duration_seconds` from render metadata for the full listening activity. Render metadata stores its estimate separately as `sequence.estimated_duration_seconds`; it is not an actual playback checkpoint. Use a new scratch filename when revising; Jutsu deliberately does not overwrite outputs.
 
-Build and review the teaching around these finished app outputs. Read the app's sequence report to understand its cuts and joins, and measure total planned listening as well as each player's length. Allow time for responses and explanations. If the practice needs adjustment, revise the format JSON or conversational excerpt and rerun Jutsu. Preserve explicit user choices and clarify unresolved learning preferences or conflicts before making the affected choices.
+Build and review the teaching around these finished app outputs. Read the app's sequence report to understand its cuts and joins, and measure total planned listening as well as each player's length. Allow time for responses and explanations. If the practice needs adjustment, revise the format JSON or conversational excerpt and rerun Jutsu. Rename each reviewed final MP3 to `<nn>-<topic>.mp3` as specified in SKILL.md, without re-encoding; keep scratch audio outside that naming structure. Update lesson links and record the exact final paths and matching reports in `task.md`. Preserve explicit user choices and clarify unresolved learning preferences or conflicts before making the affected choices.
 
 ## Adapt the processed practice
 
