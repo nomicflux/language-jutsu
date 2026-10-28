@@ -96,6 +96,22 @@ pub(crate) struct Args {
     metadata_output: Option<PathBuf>,
 }
 
+#[derive(clap::Args)]
+pub(crate) struct Mp3Tags {
+    /// Track title tag.
+    #[arg(long)]
+    pub(crate) title: String,
+    /// Album tag.
+    #[arg(long)]
+    pub(crate) album: String,
+    /// Artist tag.
+    #[arg(long)]
+    pub(crate) artist: String,
+    /// Track number tag.
+    #[arg(long)]
+    pub(crate) track: u32,
+}
+
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Package authored vocabulary, grammar and listening cards with audio for Anki.
@@ -104,6 +120,16 @@ pub(crate) enum Command {
         /// Relative audio paths resolve beside this file.
         input: PathBuf,
         /// New .apkg file; existing files are never replaced.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Write a tagged MP3 copy of a final player.
+    Mp3Copy {
+        /// Final player audio file.
+        input: PathBuf,
+        #[command(flatten)]
+        tags: Mp3Tags,
+        /// New .mp3 file; existing files are never replaced.
         #[arg(long)]
         output: PathBuf,
     },

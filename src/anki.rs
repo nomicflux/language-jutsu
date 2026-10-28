@@ -8,7 +8,6 @@ use std::{
 use genanki_rs::{Deck, Field, Model, Note, Package, Template};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use tempfile::NamedTempFile;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -152,37 +151,14 @@ fn model(kind: Kind) -> Model {
 
 pub(crate) fn build(input: &Path, output: &Path) -> Result<()> {
     let manifest: Manifest = serde_json::from_slice(&fs::read(input)?)?;
-    if output.extension().and_then(|ext| ext.to_str()) != Some("apkg") {
-        return Err("output must have an .apkg extension".into());
-    }
-    if output.try_exists()? {
-        return Err(format!("output already exists: {}", output.display()).into());
-    }
-    if manifest.deck_id <= 0 || manifest.cards.is_empty() {
-        return Err("deck_id must be positive and cards must not be empty".into());
-    }
-    required("deck_name", &manifest.deck_name)?;
-    required("language", &manifest.language)?;
+    let (_, mut file) = crate::output::reserve(
+        output,
+        &["apkg"],
+        "output must have an .apkg extension",
+        &format!("output already exists: {}", output.display()),
+    )?;
     let base = input.parent().unwrap_or_else(|| Path::new("."));
-    let mut media = BTreeMap::new();
-    let mut keys = HashSet::new();
-    let mut deck = Deck::new(manifest.deck_id, &manifest.deck_name, "");
-    for card in &manifest.cards {
-        let note = make_note(card, &manifest, base, &mut media)
-            .map_err(|error| format!("card {:?}: {error}", card.key))?;
-        if !keys.insert(&card.key) {
-            return Err(format!("duplicate card key: {}", card.key).into());
-        }
-        deck.add_note(note);
-    }
-    let paths: Vec<_> = media.values().map(String::as_str).collect();
-    let mut package = Package::new(vec![deck], paths)?;
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let mut file = NamedTempFile::new_in(parent)?;
-    package.write(file.as_file_mut())?;
+    package(&manifest, base)?.write(file.as_file_mut())?;
     file.persist_noclobber(output)?;
     println!(
         "Wrote {} cards to {}",
@@ -190,6 +166,27 @@ pub(crate) fn build(input: &Path, output: &Path) -> Result<()> {
         output.display()
     );
     Ok(())
+}
+
+fn package(manifest: &Manifest, base: &Path) -> Result<Package> {
+    if manifest.deck_id <= 0 || manifest.cards.is_empty() {
+        return Err("deck_id must be positive and cards must not be empty".into());
+    }
+    required("deck_name", &manifest.deck_name)?;
+    required("language", &manifest.language)?;
+    let mut media = BTreeMap::new();
+    let mut keys = HashSet::new();
+    let mut deck = Deck::new(manifest.deck_id, &manifest.deck_name, "");
+    for card in &manifest.cards {
+        let note = make_note(card, manifest, base, &mut media)
+            .map_err(|error| format!("card {:?}: {error}", card.key))?;
+        if !keys.insert(&card.key) {
+            return Err(format!("duplicate card key: {}", card.key).into());
+        }
+        deck.add_note(note);
+    }
+    let paths: Vec<_> = media.values().map(String::as_str).collect();
+    Ok(Package::new(vec![deck], paths)?)
 }
 
 fn make_note(

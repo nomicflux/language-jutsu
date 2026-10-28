@@ -243,6 +243,15 @@ cargo run -- anki cards.json --output lesson.apkg
 
 Packages authored Vocab, Grammar and Listening cards with embedded audio into a new `.apkg`, without accessing a live Anki collection. Each card submits its source chunk as one `context` object containing `audio` (the recording path) and `sentence` (its full corresponding text). The JSON manifest also supplies deck identity, language and card content; note identities remain stable across revisions. See the [input format and card requirements](skills/language-jutsu-listening/references/anki.md#package-for-anki).
 
+### Make a tagged MP3 copy
+
+```sh
+cargo run -- mp3-copy player.wav --title "Are you a saver?" --album "2026-10-28 Lesson" \
+  --artist Indonesian --track 1 --output player.mp3
+```
+
+Writes an MP3 copy of a final player with the `title`, `album`, `artist` and `track` tags given (source tags are dropped). The output must end in `.mp3`; an existing file is never replaced.
+
 ### Use a standalone binary
 
 Keep the single editable format JSON beside the binary in this layout:

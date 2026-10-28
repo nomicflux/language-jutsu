@@ -8,7 +8,11 @@ use std::{
 
 use tempfile::NamedTempFile;
 
-use crate::{media::DecodedAudio, segmentation::FrameRange, sequence::Sequence};
+use crate::{
+    media::DecodedAudio,
+    segmentation::FrameRange,
+    sequence::{Play, Sequence},
+};
 
 // Keep every stage inside atempo's blending range; their product is the requested speed.
 fn tempo_filter(mut factor: f64) -> String {
@@ -46,7 +50,7 @@ fn pcm_input(source: &DecodedAudio, path: &Path) -> Command {
     command
 }
 
-fn run(command: &mut Command, stage: &str) -> Result<(), Box<dyn Error>> {
+pub(crate) fn run(command: &mut Command, stage: &str) -> Result<(), Box<dyn Error>> {
     let result = command
         .output()
         .map_err(|error| format!("cannot start ffmpeg for {stage}: {error}"))?;
@@ -60,84 +64,106 @@ fn run(command: &mut Command, stage: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub(crate) fn publish(
-    source: &DecodedAudio,
-    units: &[FrameRange],
-    sequence: &Sequence,
-    output: &Path,
-) -> Result<u64, Box<dyn Error>> {
-    if output.try_exists()? {
-        return Err("study output already exists; nothing was replaced".into());
-    }
-    let format = output
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if format != "wav" && format != "mp3" {
-        return Err("study output must have a .wav or .mp3 extension".into());
-    }
+const MP3_RATES: [u32; 9] = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000];
+
+fn frame_bytes(source: &DecodedAudio) -> u64 {
+    u64::from(source.info().channels.get()) * 4
+}
+
+fn check_mp3_compatible(source: &DecodedAudio, format: &str) -> Result<(), Box<dyn Error>> {
     let info = source.info();
-    let rate = info.sample_rate.get();
-    if format == "mp3"
-        && (info.channels.get() > 2
-            || ![8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000].contains(&rate))
+    if format == "mp3" && (info.channels.get() > 2 || !MP3_RATES.contains(&info.sample_rate.get()))
     {
         return Err("MP3 cannot preserve this source's sample rate/channel count; use .wav".into());
     }
-    let frame_bytes = u64::from(info.channels.get()) * 4;
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let encoded = NamedTempFile::new_in(parent)?;
+    Ok(())
+}
+
+fn gap_bytes(source: &DecodedAudio, play: &Play) -> Result<u64, Box<dyn Error>> {
+    let rate = u128::from(source.info().sample_rate.get());
+    let gap_frames = u64::try_from((play.following_gap.as_nanos() * rate).div_ceil(1_000_000_000))
+        .map_err(|_| "practice gap exceeds the frame index range")?;
+    Ok(gap_frames
+        .checked_mul(frame_bytes(source))
+        .ok_or("practice gap byte count overflow")?)
+}
+
+fn stretch(
+    source: &DecodedAudio,
+    clip: &Path,
+    factor: f64,
+    index: usize,
+) -> Result<NamedTempFile, Box<dyn Error>> {
+    let stretched = NamedTempFile::new()?;
+    let mut command = pcm_input(source, clip);
+    command
+        .args([
+            "-af",
+            &tempo_filter(factor),
+            "-c:a",
+            "pcm_f32le",
+            "-f",
+            "f32le",
+            "pipe:1",
+        ])
+        .stdout(Stdio::from(stretched.as_file().try_clone()?));
+    run(
+        &mut command,
+        &format!("tempo processing at play {}", index + 1),
+    )?;
+    let bytes = stretched.as_file().metadata()?.len();
+    if bytes == 0 || bytes % frame_bytes(source) != 0 {
+        return Err(format!(
+            "tempo processing produced empty or incomplete PCM at play {}",
+            index + 1
+        )
+        .into());
+    }
+    Ok(stretched)
+}
+
+fn append_play(
+    source: &DecodedAudio,
+    units: &[FrameRange],
+    play: &Play,
+    index: usize,
+    assembled: &mut File,
+) -> Result<(), Box<dyn Error>> {
+    let mut input = source.open_range_pcm(&play.source_range(units))?;
+    if play.speed.factor() == 1.0 {
+        io::copy(&mut input, assembled)?;
+        return Ok(());
+    }
+    let mut clip = NamedTempFile::new()?;
+    io::copy(&mut input, clip.as_file_mut())?;
+    clip.flush()?;
+    let stretched = stretch(source, clip.path(), play.speed.factor(), index)?;
+    io::copy(&mut File::open(stretched.path())?, assembled)?;
+    Ok(())
+}
+
+fn assemble(
+    source: &DecodedAudio,
+    units: &[FrameRange],
+    sequence: &Sequence,
+) -> Result<NamedTempFile, Box<dyn Error>> {
     let mut assembled = NamedTempFile::new()?;
     for (index, play) in sequence.plays().iter().enumerate() {
-        let gap_frames = u64::try_from(
-            (play.following_gap.as_nanos() * u128::from(rate)).div_ceil(1_000_000_000),
-        )
-        .map_err(|_| "practice gap exceeds the frame index range")?;
-        let gap_bytes = gap_frames
-            .checked_mul(frame_bytes)
-            .ok_or("practice gap byte count overflow")?;
-        let mut input = source.open_range_pcm(&play.source_range(units))?;
-        if play.speed.factor() == 1.0 {
-            io::copy(&mut input, assembled.as_file_mut())?;
-        } else {
-            let mut clip = NamedTempFile::new()?;
-            io::copy(&mut input, clip.as_file_mut())?;
-            clip.flush()?;
-            let stretched = NamedTempFile::new()?;
-            let mut command = pcm_input(source, clip.path());
-            command
-                .args([
-                    "-af",
-                    &tempo_filter(play.speed.factor()),
-                    "-c:a",
-                    "pcm_f32le",
-                    "-f",
-                    "f32le",
-                    "pipe:1",
-                ])
-                .stdout(Stdio::from(stretched.as_file().try_clone()?));
-            run(
-                &mut command,
-                &format!("tempo processing at play {}", index + 1),
-            )?;
-            let bytes = stretched.as_file().metadata()?.len();
-            if bytes == 0 || bytes % frame_bytes != 0 {
-                return Err(format!(
-                    "tempo processing produced empty or incomplete PCM at play {}",
-                    index + 1
-                )
-                .into());
-            }
-            io::copy(&mut File::open(stretched.path())?, assembled.as_file_mut())?;
-        }
-        io::copy(&mut io::repeat(0).take(gap_bytes), assembled.as_file_mut())?;
+        let gap = gap_bytes(source, play)?;
+        append_play(source, units, play, index, assembled.as_file_mut())?;
+        io::copy(&mut io::repeat(0).take(gap), assembled.as_file_mut())?;
     }
     assembled.flush()?;
-    let mut command = pcm_input(source, assembled.path());
+    Ok(assembled)
+}
+
+fn encode(
+    source: &DecodedAudio,
+    assembled: &Path,
+    format: &str,
+    encoded: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let mut command = pcm_input(source, assembled);
     command.args(["-y", "-c:a"]);
     if format == "wav" {
         command.args(["pcm_f32le", "-rf64", "auto"]);
@@ -146,15 +172,33 @@ pub(crate) fn publish(
     }
     command
         .arg("-f")
-        .arg(&format)
-        .arg(encoded.path())
+        .arg(format)
+        .arg(encoded)
         .stdout(Stdio::null());
     run(&mut command, "study encoding")?;
-    if encoded.as_file().metadata()?.len() == 0 {
+    if std::fs::metadata(encoded)?.len() == 0 {
         return Err("study encoder produced an empty file".into());
     }
+    Ok(())
+}
+
+pub(crate) fn publish(
+    source: &DecodedAudio,
+    units: &[FrameRange],
+    sequence: &Sequence,
+    output: &Path,
+) -> Result<u64, Box<dyn Error>> {
+    let (format, encoded) = crate::output::reserve(
+        output,
+        &["wav", "mp3"],
+        "study output must have a .wav or .mp3 extension",
+        "study output already exists; nothing was replaced",
+    )?;
+    check_mp3_compatible(source, &format)?;
+    let assembled = assemble(source, units, sequence)?;
+    encode(source, assembled.path(), &format, encoded.path())?;
     encoded
         .persist_noclobber(output)
         .map_err(|error| format!("cannot save study audio: {error}"))?;
-    Ok(assembled.as_file().metadata()?.len() / frame_bytes)
+    Ok(assembled.as_file().metadata()?.len() / frame_bytes(source))
 }
