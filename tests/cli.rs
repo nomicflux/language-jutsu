@@ -2542,3 +2542,64 @@ fn url_acquisition_failures_preserve_input_and_publish_nothing() {
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("cannot start yt-dlp"));
 }
+
+fn mp3_copy(fixture: &Fixture, output: &std::path::Path) -> Output {
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/jfk.wav");
+    let tags = ["--title", "Ex 1", "--album", "2026-10-28 Lesson"];
+    Command::new(env!("CARGO_BIN_EXE_language-jutsu"))
+        .current_dir(&fixture.directory)
+        .arg("mp3-copy")
+        .arg(input)
+        .args(tags)
+        .args(["--artist", "Arabic", "--track", "2", "--output"])
+        .arg(output)
+        .output()
+        .unwrap()
+}
+
+fn probe_tag(path: &std::path::Path, name: &str) -> String {
+    let probe = Command::new("ffprobe")
+        .args(["-v", "error", "-show_entries"])
+        .arg(format!("format_tags={name}"))
+        .args(["-of", "default=nw=1:nk=1"])
+        .arg(path)
+        .output()
+        .unwrap();
+    String::from_utf8(probe.stdout).unwrap().trim().to_owned()
+}
+
+#[test]
+fn mp3_copy_writes_an_mp3_with_the_given_tags() {
+    let fixture = Fixture::new();
+    let output = fixture.directory.join("copy.mp3");
+    let result = mp3_copy(&fixture, &output);
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(probe_tag(&output, "title"), "Ex 1");
+    assert_eq!(probe_tag(&output, "album"), "2026-10-28 Lesson");
+    assert_eq!(probe_tag(&output, "artist"), "Arabic");
+    assert_eq!(probe_tag(&output, "track"), "2");
+}
+
+#[test]
+fn mp3_copy_never_replaces_an_existing_file() {
+    let fixture = Fixture::new();
+    let output = fixture.directory.join("copy.mp3");
+    fs::write(&output, b"keep").unwrap();
+    let result = mp3_copy(&fixture, &output);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("output already exists"));
+    assert_eq!(fs::read(&output).unwrap(), b"keep");
+}
+
+#[test]
+fn mp3_copy_refuses_a_non_mp3_output() {
+    let fixture = Fixture::new();
+    for name in ["copy.wav", "copy.MP3"] {
+        let output = fixture.directory.join(name);
+        let result = mp3_copy(&fixture, &output);
+        assert!(!result.status.success());
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains("output must have an .mp3 extension"));
+        assert!(!output.exists());
+    }
+}

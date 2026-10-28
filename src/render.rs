@@ -14,6 +14,8 @@ use crate::{
     sequence::{Play, Sequence},
 };
 
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
 // Keep every stage inside atempo's blending range; their product is the requested speed.
 fn tempo_filter(mut factor: f64) -> String {
     let mut stages = Vec::new();
@@ -50,7 +52,7 @@ fn pcm_input(source: &DecodedAudio, path: &Path) -> Command {
     command
 }
 
-pub(crate) fn run(command: &mut Command, stage: &str) -> Result<(), Box<dyn Error>> {
+pub(crate) fn run(command: &mut Command, stage: &str) -> Result<()> {
     let result = command
         .output()
         .map_err(|error| format!("cannot start ffmpeg for {stage}: {error}"))?;
@@ -65,12 +67,13 @@ pub(crate) fn run(command: &mut Command, stage: &str) -> Result<(), Box<dyn Erro
 }
 
 const MP3_RATES: [u32; 9] = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000];
+const TEMPO_OUTPUT: [&str; 5] = ["-c:a", "pcm_f32le", "-f", "f32le", "pipe:1"];
 
 fn frame_bytes(source: &DecodedAudio) -> u64 {
     u64::from(source.info().channels.get()) * 4
 }
 
-fn check_mp3_compatible(source: &DecodedAudio, format: &str) -> Result<(), Box<dyn Error>> {
+fn check_mp3_compatible(source: &DecodedAudio, format: &str) -> Result<()> {
     let info = source.info();
     if format == "mp3" && (info.channels.get() > 2 || !MP3_RATES.contains(&info.sample_rate.get()))
     {
@@ -79,7 +82,7 @@ fn check_mp3_compatible(source: &DecodedAudio, format: &str) -> Result<(), Box<d
     Ok(())
 }
 
-fn gap_bytes(source: &DecodedAudio, play: &Play) -> Result<u64, Box<dyn Error>> {
+fn gap_bytes(source: &DecodedAudio, play: &Play) -> Result<u64> {
     let rate = u128::from(source.info().sample_rate.get());
     let gap_frames = u64::try_from((play.following_gap.as_nanos() * rate).div_ceil(1_000_000_000))
         .map_err(|_| "practice gap exceeds the frame index range")?;
@@ -88,30 +91,17 @@ fn gap_bytes(source: &DecodedAudio, play: &Play) -> Result<u64, Box<dyn Error>> 
         .ok_or("practice gap byte count overflow")?)
 }
 
-fn stretch(
-    source: &DecodedAudio,
-    clip: &Path,
-    factor: f64,
-    index: usize,
-) -> Result<NamedTempFile, Box<dyn Error>> {
-    let stretched = NamedTempFile::new()?;
+fn stretch_command(source: &DecodedAudio, clip: &Path, factor: f64, out: &File) -> Result<Command> {
     let mut command = pcm_input(source, clip);
     command
-        .args([
-            "-af",
-            &tempo_filter(factor),
-            "-c:a",
-            "pcm_f32le",
-            "-f",
-            "f32le",
-            "pipe:1",
-        ])
-        .stdout(Stdio::from(stretched.as_file().try_clone()?));
-    run(
-        &mut command,
-        &format!("tempo processing at play {}", index + 1),
-    )?;
-    let bytes = stretched.as_file().metadata()?.len();
+        .args(["-af", &tempo_filter(factor)])
+        .args(TEMPO_OUTPUT)
+        .stdout(Stdio::from(out.try_clone()?));
+    Ok(command)
+}
+
+fn check_whole_frames(source: &DecodedAudio, stretched: &File, index: usize) -> Result<()> {
+    let bytes = stretched.metadata()?.len();
     if bytes == 0 || bytes % frame_bytes(source) != 0 {
         return Err(format!(
             "tempo processing produced empty or incomplete PCM at play {}",
@@ -119,6 +109,15 @@ fn stretch(
         )
         .into());
     }
+    Ok(())
+}
+
+fn stretch(source: &DecodedAudio, clip: &Path, factor: f64, index: usize) -> Result<NamedTempFile> {
+    let stretched = NamedTempFile::new()?;
+    let mut command = stretch_command(source, clip, factor, stretched.as_file())?;
+    let stage = format!("tempo processing at play {}", index + 1);
+    run(&mut command, &stage)?;
+    check_whole_frames(source, stretched.as_file(), index)?;
     Ok(stretched)
 }
 
@@ -128,7 +127,7 @@ fn append_play(
     play: &Play,
     index: usize,
     assembled: &mut File,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let mut input = source.open_range_pcm(&play.source_range(units))?;
     if play.speed.factor() == 1.0 {
         io::copy(&mut input, assembled)?;
@@ -146,7 +145,7 @@ fn assemble(
     source: &DecodedAudio,
     units: &[FrameRange],
     sequence: &Sequence,
-) -> Result<NamedTempFile, Box<dyn Error>> {
+) -> Result<NamedTempFile> {
     let mut assembled = NamedTempFile::new()?;
     for (index, play) in sequence.plays().iter().enumerate() {
         let gap = gap_bytes(source, play)?;
@@ -157,22 +156,20 @@ fn assemble(
     Ok(assembled)
 }
 
-fn encode(
-    source: &DecodedAudio,
-    assembled: &Path,
-    format: &str,
-    encoded: &Path,
-) -> Result<(), Box<dyn Error>> {
-    let mut command = pcm_input(source, assembled);
-    command.args(["-y", "-c:a"]);
+fn codec_args(format: &str) -> &'static [&'static str] {
     if format == "wav" {
-        command.args(["pcm_f32le", "-rf64", "auto"]);
+        &["pcm_f32le", "-rf64", "auto"]
     } else {
-        command.args(["libmp3lame", "-q:a", "2"]);
+        &["libmp3lame", "-q:a", "2"]
     }
+}
+
+fn encode(source: &DecodedAudio, assembled: &Path, format: &str, encoded: &Path) -> Result<()> {
+    let mut command = pcm_input(source, assembled);
     command
-        .arg("-f")
-        .arg(format)
+        .args(["-y", "-c:a"])
+        .args(codec_args(format))
+        .args(["-f", format])
         .arg(encoded)
         .stdout(Stdio::null());
     run(&mut command, "study encoding")?;
@@ -182,18 +179,22 @@ fn encode(
     Ok(())
 }
 
+fn reserve_study(output: &Path) -> Result<(String, NamedTempFile)> {
+    crate::output::reserve(
+        output,
+        &["wav", "mp3"],
+        "study output must have a .wav or .mp3 extension",
+        "study output already exists; nothing was replaced",
+    )
+}
+
 pub(crate) fn publish(
     source: &DecodedAudio,
     units: &[FrameRange],
     sequence: &Sequence,
     output: &Path,
-) -> Result<u64, Box<dyn Error>> {
-    let (format, encoded) = crate::output::reserve(
-        output,
-        &["wav", "mp3"],
-        "study output must have a .wav or .mp3 extension",
-        "study output already exists; nothing was replaced",
-    )?;
+) -> Result<u64> {
+    let (format, encoded) = reserve_study(output)?;
     check_mp3_compatible(source, &format)?;
     let assembled = assemble(source, units, sequence)?;
     encode(source, assembled.path(), &format, encoded.path())?;

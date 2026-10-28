@@ -169,24 +169,33 @@ pub(crate) fn build(input: &Path, output: &Path) -> Result<()> {
 }
 
 fn package(manifest: &Manifest, base: &Path) -> Result<Package> {
+    validate(manifest)?;
+    let mut media = BTreeMap::new();
+    let deck = deck(manifest, base, &mut media)?;
+    let paths: Vec<_> = media.values().map(String::as_str).collect();
+    Ok(Package::new(vec![deck], paths)?)
+}
+
+fn validate(manifest: &Manifest) -> Result<()> {
     if manifest.deck_id <= 0 || manifest.cards.is_empty() {
         return Err("deck_id must be positive and cards must not be empty".into());
     }
     required("deck_name", &manifest.deck_name)?;
-    required("language", &manifest.language)?;
-    let mut media = BTreeMap::new();
+    required("language", &manifest.language)
+}
+
+fn deck(manifest: &Manifest, base: &Path, media: &mut BTreeMap<String, String>) -> Result<Deck> {
     let mut keys = HashSet::new();
     let mut deck = Deck::new(manifest.deck_id, &manifest.deck_name, "");
     for card in &manifest.cards {
-        let note = make_note(card, manifest, base, &mut media)
+        let note = make_note(card, manifest, base, media)
             .map_err(|error| format!("card {:?}: {error}", card.key))?;
         if !keys.insert(&card.key) {
             return Err(format!("duplicate card key: {}", card.key).into());
         }
         deck.add_note(note);
     }
-    let paths: Vec<_> = media.values().map(String::as_str).collect();
-    Ok(Package::new(vec![deck], paths)?)
+    Ok(deck)
 }
 
 fn make_note(

@@ -8,14 +8,13 @@ fn encoder(input: &Path, tags: &Mp3Tags, encoded: &Path) -> Command {
         .args(["-nostdin", "-v", "error", "-xerror", "-y", "-i"])
         .arg(input)
         .args(["-map_metadata", "-1"]);
-    let fields = [
-        ("title", tags.title.clone()),
-        ("album", tags.album.clone()),
-        ("artist", tags.artist.clone()),
-        ("track", tags.track.to_string()),
-    ];
-    for (key, value) in fields {
-        command.arg("-metadata").arg(format!("{key}={value}"));
+    for tag in [
+        format!("title={}", tags.title),
+        format!("album={}", tags.album),
+        format!("artist={}", tags.artist),
+        format!("track={}", tags.track),
+    ] {
+        command.arg("-metadata").arg(tag);
     }
     command
         .args(["-c:a", "libmp3lame", "-q:a", "2", "-f", "mp3"])
