@@ -1,0 +1,13 @@
+Language Jutsu — unsigned Mac installer
+
+1. Open “Install Language Jutsu”.
+2. If macOS blocks it, open System Settings → Privacy & Security, scroll to
+   the blocked-app message, and choose Open Anyway. Confirm when prompted.
+3. Click Install. The speech model downloads automatically (about 1.5 GiB).
+4. Follow the completion screen to start a lesson in Codex or Claude Code.
+
+This download is not signed with an Apple Developer ID or notarized by Apple.
+
+You can eject this disk image after setup finishes. Lessons and the installed
+program remain on your Mac. Run a newer installer to update the program;
+your saved lessons and downloaded model are retained.

@@ -71,6 +71,8 @@ On request, the skill sets up two separate daily reminders in the same chat: one
 
 ### Mac installer (prebuilt binaries)
 
+No prebuilt installer has been published to [GitHub Releases](https://github.com/nomicflux/language-jutsu/releases) yet. Maintainers can [build a new version and publish its downloads](packaging/macos/README.md#build-and-publish-a-new-version).
+
 Open `Language-Jutsu-<version>-unsigned.dmg`, then **Install Language Jutsu** and click **Install**. If macOS blocks it, open **System Settings → Privacy & Security → Open Anyway** and confirm. This installer is unsigned and is not notarized by Apple.
 
 The package contains native Apple Silicon and Intel binaries, FFmpeg/ffprobe, yt-dlp, Deno, the formats, and the listening skill. It targets macOS 13 or later. No Homebrew, Rust, compiler, terminal setup, or separately installed Python is needed. The default speech model downloads automatically, just as it does in source setup. Setup reuses the existing Hugging Face cache and offers Retry if downloading or verification fails.
@@ -296,7 +298,7 @@ cargo run -- --url 'https://youtu.be/mK-xzqnJmSQ' \
 
 The outputs are `transcript.txt` and `transcript.txt.json`. JSON includes source provenance, requested language/dialect, model and whisper.cpp version, decoding settings, text, segments with `no_speech_prob`, and words with probabilities. Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. Transcription always transcribes, never translates into English. Use a language code supported by Whisper; an unsupported code, or a language the chosen model lacks, fails explicitly. A dialect label is metadata, not a promise of model dialect accuracy. Transcripts do not establish speaker identities or correct answers for tutoring.
 
-[Boundary evidence](design/transcription-and-metadata.md) traces the transcription pipeline and saved metadata shapes to their construction, serialization, and parsing code.
+See the [transcription implementation](src/transcription.rs) and [render metadata definitions](src/metadata.rs) for the saved data structures.
 
 ### Test the decoder
 
@@ -378,7 +380,7 @@ Processing modes other than `--transcribe` load one complete JSON file with `chu
 | `playback.repetitions` | Times each speed/span occurrence plays before advancing. |
 | `playback.gap_ms` | Silence between plays. |
 
-Custom files replace the complete format. The retired `quiet_threshold_dbfs`, `analysis_window_ms`, `minimum_pause_ms`, and `minimum_unit_ms` fields are rejected. See the [adaptive chunking plan](design/adaptive-chunking-plan.md) for the implemented algorithm and validation.
+Custom files replace the complete format. The retired `quiet_threshold_dbfs`, `analysis_window_ms`, `minimum_pause_ms`, and `minimum_unit_ms` fields are rejected. See the [segmentation implementation](src/segmentation.rs) and [CLI tests](tests/cli.rs) for the algorithm and validation.
 
 ## Languages
 
@@ -413,15 +415,15 @@ The rewritten lesson design is undergoing a real learner session; human usabilit
 
 The integration suite invokes the real CLI and FFmpeg. It checks exact decoded samples, window selection, pause boundaries, both sequence orders, joined pauses, pitch/duration, stereo channels, repeats, gaps, and output protection. Additional checks exercise standalone defaults from another directory, live edits to the default recipe, `--check` without media tools, an unwritable directory, and an unavailable encoder. Transcription tests run whisper.cpp with `ggml-tiny.bin` on real public-domain English and Japanese speech ([sources](tests/fixtures/SOURCES.md)). Synthetic language-label checks do not establish spoken-audio quality in those languages.
 
-The supplied full Shami recording also rendered successfully using the default formula: 101 units, 34 groups, and 672 plays. [Full study MP3](palestinian-study.mp3) contains 94 minutes 44.111 seconds of decoded audio at 48 kHz stereo. A complete independent decode matched the renderer's 272,837,320 PCM frames; the original recording and earlier decode artifacts retained their hashes. [Run summary](palestinian-study.log). All 38 tests, formatting, and Clippy passed on 8 October 2026. Listening checks in the remaining languages and an unattended listen remain open.
+The supplied full Shami recording also rendered successfully using the default formula: 101 units, 34 groups, and 672 plays. The local study MP3 contained 94 minutes 44.111 seconds of decoded audio at 48 kHz stereo. A complete independent decode matched the renderer's 272,837,320 PCM frames; the original recording and earlier decode artifacts retained their hashes. All 38 tests, formatting, and Clippy passed on 8 October 2026. Listening checks in the remaining languages and an unattended listen remain open.
 
 ## Design and research
 
-- [YouTube URL input design and validation](design/youtube-input-plan.md)
+- [YouTube input implementation](src/source.rs)
 - [First-pass CLI design](design/README.md)
 - [Formula semantics and worked sequences](design/formula.md)
 - [CLI and processing model](design/cli-and-processing.md)
-- [Audio processing implementation plan](design/audio-processing-plan.md)
+- [Audio rendering implementation](src/render.rs)
 - [Listening research](research/README.md)
 
 ## Development checks

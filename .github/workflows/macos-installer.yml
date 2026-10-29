@@ -1,0 +1,74 @@
+name: Mac installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  payload:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build tools (release builders only)
+        run: brew install cmake
+      - name: Build native runtime
+        run: python3 packaging/macos/build.py payload --arch "${{ matrix.arch }}"
+      - name: Test installer behavior
+        run: |
+          swiftc -swift-version 5 packaging/macos/InstallerCore.swift packaging/macos/InstallerTests.swift -o target/macos/installer-tests
+          target/macos/installer-tests
+      - name: Check packaged runtime
+        run: python3 packaging/macos/verify.py "target/macos/payloads/${{ matrix.arch }}"
+      - name: Archive runtime preserving executable modes and symlinks
+        run: tar -czf "target/macos/payload-${{ matrix.arch }}.tar.gz" -C target/macos/payloads "${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payload-${{ matrix.arch }}
+          path: target/macos/payload-${{ matrix.arch }}.tar.gz
+      - name: Archive corresponding dependency sources
+        if: matrix.arch == 'arm64'
+        run: tar -czf target/macos/dependency-sources.tar.gz -C target/macos sources
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'arm64'
+        with:
+          name: dependency-sources
+          path: target/macos/dependency-sources.tar.gz
+
+  installer:
+    needs: payload
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: payload-*
+          path: target/macos/archives
+          merge-multiple: true
+      - name: Unpack both native payloads
+        run: |
+          mkdir -p target/macos/payloads
+          tar -xzf target/macos/archives/payload-arm64.tar.gz -C target/macos/payloads
+          tar -xzf target/macos/archives/payload-x86_64.tar.gz -C target/macos/payloads
+      - name: Build unsigned universal DMG
+        run: python3 packaging/macos/build.py assemble
+      - uses: actions/download-artifact@v4
+        with:
+          name: dependency-sources
+          path: target/macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Language-Jutsu-Mac-installer-unsigned
+          path: |
+            target/macos/Language-Jutsu-*-unsigned.dmg
+            target/macos/dependency-sources.tar.gz
+            packaging/macos/OPENING.txt
