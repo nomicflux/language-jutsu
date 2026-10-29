@@ -298,8 +298,6 @@ cargo run -- --url 'https://youtu.be/mK-xzqnJmSQ' \
 
 The outputs are `transcript.txt` and `transcript.txt.json`. JSON includes source provenance, requested language/dialect, model and whisper.cpp version, decoding settings, text, segments with `no_speech_prob`, and words with probabilities. Segment and word times are estimated **original-source seconds**, shifted by the selected start frame divided by the source sample rate. Transcription always transcribes, never translates into English. Use a language code supported by Whisper; an unsupported code, or a language the chosen model lacks, fails explicitly. A dialect label is metadata, not a promise of model dialect accuracy. Transcripts do not establish speaker identities or correct answers for tutoring.
 
-See the [transcription implementation](src/transcription.rs) and [render metadata definitions](src/metadata.rs) for the saved data structures.
-
 ### Test the decoder
 
 ```sh
@@ -380,7 +378,7 @@ Processing modes other than `--transcribe` load one complete JSON file with `chu
 | `playback.repetitions` | Times each speed/span occurrence plays before advancing. |
 | `playback.gap_ms` | Silence between plays. |
 
-Custom files replace the complete format. The retired `quiet_threshold_dbfs`, `analysis_window_ms`, `minimum_pause_ms`, and `minimum_unit_ms` fields are rejected. See the [segmentation implementation](src/segmentation.rs) and [CLI tests](tests/cli.rs) for the algorithm and validation.
+Custom files replace the complete format. The retired `quiet_threshold_dbfs`, `analysis_window_ms`, `minimum_pause_ms`, and `minimum_unit_ms` fields are rejected.
 
 ## Languages
 
@@ -416,15 +414,6 @@ The rewritten lesson design is undergoing a real learner session; human usabilit
 The integration suite invokes the real CLI and FFmpeg. It checks exact decoded samples, window selection, pause boundaries, both sequence orders, joined pauses, pitch/duration, stereo channels, repeats, gaps, and output protection. Additional checks exercise standalone defaults from another directory, live edits to the default recipe, `--check` without media tools, an unwritable directory, and an unavailable encoder. Transcription tests run whisper.cpp with `ggml-tiny.bin` on real public-domain English and Japanese speech ([sources](tests/fixtures/SOURCES.md)). Synthetic language-label checks do not establish spoken-audio quality in those languages.
 
 The supplied full Shami recording also rendered successfully using the default formula: 101 units, 34 groups, and 672 plays. The local study MP3 contained 94 minutes 44.111 seconds of decoded audio at 48 kHz stereo. A complete independent decode matched the renderer's 272,837,320 PCM frames; the original recording and earlier decode artifacts retained their hashes. All 38 tests, formatting, and Clippy passed on 8 October 2026. Listening checks in the remaining languages and an unattended listen remain open.
-
-## Design and research
-
-- [YouTube input implementation](src/source.rs)
-- [First-pass CLI design](design/README.md)
-- [Formula semantics and worked sequences](design/formula.md)
-- [CLI and processing model](design/cli-and-processing.md)
-- [Audio rendering implementation](src/render.rs)
-- [Listening research](research/README.md)
 
 ## Development checks
 
