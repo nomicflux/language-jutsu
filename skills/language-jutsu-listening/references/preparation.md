@@ -1,6 +1,6 @@
 # Build the processed listening progression
 
-Use the existing Language Jutsu app and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. The commands below use absolute paths resolved into shell variables: `repo`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
+Use the existing Language Jutsu app and the commands below; use `--help` for a missing option detail. The app already implements transcription, segmentation, sequencing, joining, rendering and Anki packaging. Do not inspect or reimplement those operations to prepare a lesson. Resolve `skill`, `jutsu`, `formats`, and the lesson base as described in SKILL.md. The commands below use absolute paths resolved into shell variables: `jutsu`, `lesson`, `source`, `language`, `format`, `start`, `end`, `whisper_model`, and `skill`. They are invocation patterns, not values to copy from a scenario. Add `--dialect` only when the request supplies or establishes one. When no interval is selected, omit `--start` and `--end`.
 
 ## Get the requested conversation
 
@@ -11,7 +11,7 @@ For supplied content, preserve its recording identity and explicit bounds. If se
 Jutsu's `--url` is for a single supported YouTube video URL. Acquire and transcribe once while retaining the full downloaded original:
 
 ```sh
-cargo run --quiet --manifest-path "$repo/Cargo.toml" -- \
+"$jutsu" \
   --url "$url" --save-source "$lesson/original.audio" \
   --language "$language" --transcribe \
   --whisper-model "$whisper_model" \
@@ -29,7 +29,7 @@ For a public publisher/RSS/direct-media URL, resolve the actual audio link from 
 Transcription runs whisper.cpp inside the Jutsu executable. `whisper_model` is a model file in the ggerganov/whisper.cpp Hugging Face repository, `ggml-large-v3-turbo.bin` unless the lesson needs another; Jutsu reads it from the Hugging Face cache and downloads it there when missing. The Jutsu README gives setup. Test the configured runtime by actually transcribing the lesson.
 
 ```sh
-cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
+"$jutsu" "$source" \
   --language "$language" --start "$start" --end "$end" --transcribe \
   --whisper-model "$whisper_model" \
   --output "$lesson/transcript.txt"
@@ -43,16 +43,16 @@ Transcription output is a hypothesis. Establish the wording and meaning from the
 
 For each selected conversational excerpt, give Jutsu a source, excerpt bounds, format JSON and an `.mp3` output path. The app finds practice units, generates the play sequence, joins source spans and renders the finished study player directly as MP3. Use that complete output for the lesson and device access; do not routinely render WAV and convert it later. Render multiple excerpts as separate study files when useful; never concatenate them or manually choose practice-unit cuts. The same workflow supplies the opening passage and later practice. If the user explicitly requests no processing, use their requested unprocessed audio instead.
 
-Resolve any explicitly named format in `formats/`. Otherwise, translate the learner's level and preferences into suitable chunk sizes, repetitions, speeds and chaining; clarify unclear learning preferences in natural language before choosing their settings. Read the actual presets and select or adapt one to serve the lesson; a tested example or a file named `shorter` is not a default. Save the chosen JSON in the lesson directory so tomorrow uses the same processing settings. Always pass the format explicitly because omitted lookup is relative to the executable.
+Resolve any explicitly named format in `$formats`. Otherwise, translate the learner's level and preferences into suitable chunk sizes, repetitions, speeds and chaining; clarify unclear learning preferences in natural language before choosing their settings. Read the actual presets and select or adapt one to serve the lesson; a tested example or a file named `shorter` is not a default. Save the chosen JSON in the lesson directory so tomorrow uses the same processing settings. Always pass the format explicitly because omitted lookup is relative to the executable.
 
 `chunking.chunk_target_size_seconds` guides the app's automatic segmentation, while `--start`/`--end` select the conversational excerpt. The playback section configures the app's repetitions, speeds, joins and gaps. `joining.group_size: 1` produces no multi-unit joins; use a suitable larger group size when configuring joined practice. Do not defeat segmentation with an oversized target and manually supplied phrase windows, or assemble a file's internal play order yourself. Run the sequence command first and use its units, plays and estimated duration to choose a suitable format before running the render command. Both commands use the same source, bounds and chosen format, with distinct output names.
 
 ```sh
-cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
+"$jutsu" "$source" \
   --language "$language" --start "$start" --end "$end" \
   --format "$format" --sequence-only --output "$lesson/sequence.json"
 
-cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
+"$jutsu" "$source" \
   --language "$language" --start "$start" --end "$end" \
   --format "$format" --output "$lesson/scratch-practice.mp3" \
   --metadata-output "$lesson/practice.json"

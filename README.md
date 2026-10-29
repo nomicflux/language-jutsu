@@ -1,16 +1,91 @@
 # Language Jutsu
 
-Language Jutsu turns foreign-language recordings into study audio for repeated listening practice. It decodes a local file or a YouTube video, selects a source window, finds pause-based practice units, and renders a learning formula with pitch-preserving speed changes, progressive joining and practice gaps. It also transcribes source audio with timestamps (whisper.cpp, built into the executable) and packages lesson flashcards for Anki.
+Language Jutsu turns foreign-language recordings and YouTube videos into study audio for repeated listening practice. Practice short passages at slower speeds, repeat them with gaps to respond, and build up to longer stretches of conversation. It can also transcribe recordings and package lesson flashcards for Anki.
 
 The bundled [language-jutsu-listening](skills/language-jutsu-listening/SKILL.md) skill lets Claude Code or Codex prepare and teach complete interactive lessons around that study audio.
 
+## Guided listening skill
+
+To start a lesson, use `/language-jutsu-listening` in Claude Code or `$language-jutsu-listening` in Codex and describe the conversation you want to study.
+
+### Example prompts
+
+```text
+/language-jutsu-listening Shami Arabic, basic conversation level, 30 minutes.
+Use https://www.youtube.com/watch?v=mK-xzqnJmSQ from 03:00 to 05:00.
+I lose track of who is replying to what. Short phrases, lots of repetition.
+```
+
+```text
+$language-jutsu-listening Japanese, JLPT N3. A scene from a slice-of-life anime
+about ordering food. 20 minutes, I'll type my answers. Include readings for kanji,
+and make a new Anki deck from the lesson.
+```
+
+```text
+/language-jutsu-listening Set up my daily preparation and start reminders.
+```
+
+Lessons are saved under `listening/` in the repository for source setup, or `~/Documents/Language Jutsu/listening/` for the Mac installer. Each uses `YYYY-MM-DD/task.md`, so a later session resumes from the pending turn.
+
+### What you can specify
+
+The skill settles these from your request and asks short follow-ups only where a missing answer would change the lesson:
+
+| Option | What to say |
+| --- | --- |
+| Level | A CEFR, JLPT or other level, or a description such as "beginner", "basic conversation", "I can follow the main idea". |
+| Session time | The whole session, including listening, explanations and answering, e.g. "30 minutes". |
+| Chunk size and pace | Seconds, or a focus on words, short phrases, sentences or exchanges; more repetition and slower practice, or more continuous conversation. |
+| Supplemental materials | Vocabulary and grammar notes are included unless you decline them. Ask for transcripts, readings, pronunciation guidance, or a particular instruction language. |
+| Listening goal | What is hardest: recognizing known words in speech, unfamiliar expressions, or keeping up with the conversation. |
+| Content | Language and dialect, topic, source type, a specific video or file and bounds, and what you already know about it (e.g. a show's characters). |
+| Interaction | Whether you will read and type during the lesson or respond aloud. |
+| Format | A preferred playback format; explicitly chosen formats are kept. |
+
+### Anki flashcards
+
+Ask for flashcards and say whether to **create a new deck** or **add to an existing deck**. For an existing deck, name it and provide an export or access. The cards cover every vocabulary and grammar point taught in the lesson, as Vocab, Grammar and Listening cards with the lesson's processed audio, packaged as an `.apkg` to import with Anki's **File → Import**.
+
+### iBroadcast playlists (experimental)
+
+**Experimental: automation requires browser access.** The agent uses your signed-in [iBroadcast web player](https://media.ibroadcast.com/) to perform user actions such as uploading files and creating playlists. This uses browser control, not iBroadcast API access; no developer app, API key or OAuth setup is required.
+
+To enable it:
+
+1. Create an iBroadcast account if needed, then sign in to the web player in a browser your agent can control, including file uploads.
+2. Install the iBroadcast phone app and sign in to the same account.
+3. Invoke the listening skill and ask: “Set up iBroadcast playlists for my lessons, including existing lessons.” Confirm the resulting playlists on your phone. If they are missing, use **Profile → Settings → Library → Refresh Library Now**.
+
+The skill uploads only the complete, fully processed final audio identified in each lesson's Markdown. Final files use `<nn>-<topic>.mp3`, starting at `01` in lesson order; scratch, investigation, setup, card and supplemental clips are excluded. New lessons render directly to MP3; only older final WAVs need conversion with `mp3-copy`.
+
+You get one playlist per lesson and one per language, combining dialects and placing the newest lesson first. After setup, preparing, revising or superseding lessons through the skill updates the affected playlists.
+
+Without browser control, the skill provides the final MP3 paths and manual upload and playlist instructions. See the [iBroadcast workflow](skills/language-jutsu-listening/references/ibroadcast.md) for details.
+
+### Reminders
+
+On request, the skill sets up two separate daily reminders in the same chat: one at 17:00 to choose and prepare tomorrow's lesson, and one at 12:00 to start today's, in America/Chicago. Each time is editable independently. Installing the skill does not activate them. They use the desktop app's scheduled tasks; see [scheduling.md](skills/language-jutsu-listening/references/scheduling.md).
+
 ## Setup
+
+### Mac installer (prebuilt binaries)
+
+Open `Language-Jutsu-<version>-unsigned.dmg`, then **Install Language Jutsu** and click **Install**. If macOS blocks it, open **System Settings → Privacy & Security → Open Anyway** and confirm. This installer is unsigned and is not notarized by Apple.
+
+The package contains native Apple Silicon and Intel binaries, FFmpeg/ffprobe, yt-dlp, Deno, the formats, and the listening skill. It targets macOS 13 or later. No Homebrew, Rust, compiler, terminal setup, or separately installed Python is needed. The default speech model downloads automatically, just as it does in source setup. Setup reuses the existing Hugging Face cache and offers Retry if downloading or verification fails.
+
+The program is installed for your account in `~/Library/Application Support/Language Jutsu`. Skills are linked into both `~/.agents/skills` and `~/.claude/skills`; replacing a different existing skill requires confirmation and preserves a backup. Guided lessons require Codex or Claude Code. The completion screen provides a prompt to start and a button to open `~/Documents/Language Jutsu/listening`, where installed-skill lessons are saved. You can eject the DMG after setup. Rerun a newer installer to update; lessons and cached models are retained.
+
+The [Mac installer workflow](.github/workflows/macos-installer.yml) produces the DMG and accompanying dependency sources as a downloadable artifact. [Build instructions and validation](packaging/macos/README.md) describe producing that artifact locally.
+
+### Setup from source
 
 Supported systems: macOS with [Homebrew](https://brew.sh), Debian/Ubuntu on x86_64, and Windows on x64. On any other system the setup script stops with a message naming these before installing anything; use [Manual setup](#manual-setup) instead.
 
 Clone the repository and run the setup script from its directory. Keep the checkout in place afterwards: the CLI runs from it and the installed skill links to it. Rerunning setup is safe; it installs only what is missing.
 
-### macOS
+#### macOS
 
 ```sh
 ./setup.sh
@@ -18,7 +93,7 @@ Clone the repository and run the setup script from its directory. Keep the check
 
 Installs whichever of `rust`, `cmake`, `ffmpeg` and `deno` are missing with `brew install`. If `yt-dlp` is missing, downloads the official standalone `yt-dlp_macos` executable to `/usr/local/bin/yt-dlp` (asks for your password through `sudo`). libclang, which the build uses to generate the whisper.cpp bindings, comes with the Xcode Command Line Tools that Homebrew requires.
 
-### Debian and Ubuntu (x86_64)
+#### Debian and Ubuntu (x86_64)
 
 ```sh
 ./setup.sh
@@ -26,7 +101,7 @@ Installs whichever of `rust`, `cmake`, `ffmpeg` and `deno` are missing with `bre
 
 Runs `sudo apt-get install -y --no-install-recommends ca-certificates curl unzip build-essential cmake libclang-dev ffmpeg`. Then installs Rust with [rustup](https://rustup.rs) if `cargo` is missing, Deno with its [official installer](https://docs.deno.com/runtime/getting_started/installation/) if `deno` is missing, and the official standalone `yt-dlp_linux` executable to `/usr/local/bin/yt-dlp` if `yt-dlp` is missing. rustup and the Deno installer add `~/.cargo/bin` and `~/.deno/bin` to your shell configuration; open a new terminal afterwards. Transcription runs on the CPU.
 
-### Windows (x64)
+#### Windows (x64)
 
 In PowerShell:
 
@@ -36,7 +111,7 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 
 Installs with winget: `yt-dlp.yt-dlp` if `yt-dlp` is missing (its package also installs Deno and FFmpeg with ffprobe), `Kitware.CMake` if `cmake` is missing, and `LLVM.LLVM` (libclang) if `C:\Program Files\LLVM\bin\libclang.dll` is missing. Runs [rustup-init](https://rustup.rs) if `cargo` is missing; rustup offers to install the Visual Studio C++ build tools. The skill is linked with directory junctions.
 
-### What every setup does
+#### What the source scripts do
 
 1. Builds the CLI with `cargo build`.
 2. Runs `cargo run -- download-model`, which downloads the default Whisper model (`ggml-large-v3-turbo.bin`, about 1.5 GiB) into the standard Hugging Face cache: `~/.cache/huggingface/hub` (on Windows `%USERPROFILE%\.cache\huggingface\hub`), or `$HF_HUB_CACHE`, or `$HF_HOME/hub`. Nothing is stored in the repository.
@@ -56,6 +131,10 @@ cargo run -- download-model
 ```
 
 `install-skill.sh` without an argument installs into `~/.agents/skills`.
+
+### Skill installation and updates
+
+Both setup methods link the skill into `~/.agents/skills` and `~/.claude/skills`. Restart the assistant if the skill does not appear. For source setup, keep the checkout in place; `git pull` updates its skill. For the Mac installer, rerun a newer installer to update. Codex also discovers it directly when working in this checkout through `.agents/skills`; see [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
 
 ## Command-line usage
 
@@ -267,7 +346,7 @@ Then the binary can run from any working directory without `--format`:
 /path/to/language-jutsu recording.mp3 --language ja --output study.mp3
 ```
 
-Input, output, and an explicitly supplied format path resolve relative to the caller's working directory. The default format path resolves relative to the executable. Automatic packaging is not implemented.
+Input, output, and an explicitly supplied format path resolve relative to the caller's working directory. The default format path resolves relative to the executable. The Mac installer packages this layout with its runtime tools.
 
 ## Format files
 
@@ -301,71 +380,6 @@ Processing modes other than `--transcribe` load one complete JSON file with `chu
 
 Custom files replace the complete format. The retired `quiet_threshold_dbfs`, `analysis_window_ms`, `minimum_pause_ms`, and `minimum_unit_ms` fields are rejected. See the [adaptive chunking plan](design/adaptive-chunking-plan.md) for the implemented algorithm and validation.
 
-## Guided listening skill
-
-Setup links the skill into `~/.agents/skills` and `~/.claude/skills`. Keep the checkout in place; `git pull` updates the skill. Codex also discovers it directly when working in this checkout through `.agents/skills`; see [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
-
-Invoke it with `/language-jutsu-listening` in Claude Code or `$language-jutsu-listening` in Codex (restart the app if it does not appear), and describe the conversation you want to study. The skill finds a matching scene, transcribes it, renders processed study audio with the CLI, and teaches through it: chunked listening, vocabulary and grammar notes tied to the speech, your responses, and a return to the connected conversation. The rewritten lesson design is undergoing a real learner session; human usability is not yet accepted.
-
-### What you can specify
-
-The skill settles these from your request and asks short follow-ups only where a missing answer would change the lesson:
-
-| Option | What to say |
-| --- | --- |
-| Level | A CEFR, JLPT or other level, or a description such as "beginner", "basic conversation", "I can follow the main idea". |
-| Session time | The whole session, including listening, explanations and answering, e.g. "30 minutes". |
-| Chunk size and pace | Seconds, or a focus on words, short phrases, sentences or exchanges; more repetition and slower practice, or more continuous conversation. |
-| Supplemental materials | Vocabulary and grammar notes are included unless you decline them. Ask for transcripts, readings, pronunciation guidance, or a particular instruction language. |
-| Listening goal | What is hardest: recognizing known words in speech, unfamiliar expressions, or keeping up with the conversation. |
-| Content | Language and dialect, topic, source type, a specific video or file and bounds, and what you already know about it (e.g. a show's characters). |
-| Interaction | Whether you will read and type during the lesson or respond aloud. |
-| Format | A preferred playback format; explicitly chosen formats are kept. |
-
-### Anki flashcards
-
-Ask for flashcards and say whether to **create a new deck** or **add to an existing deck**. For an existing deck, name it and provide an export or access. The cards cover every vocabulary and grammar point taught in the lesson, as Vocab, Grammar and Listening cards with the lesson's processed audio, packaged as an `.apkg` to import with Anki's **File → Import**.
-
-### iBroadcast playlists (experimental)
-
-**Experimental: automation requires browser access.** The agent uses your signed-in [iBroadcast web player](https://media.ibroadcast.com/) to perform user actions such as uploading files and creating playlists. This uses browser control, not iBroadcast API access; no developer app, API key or OAuth setup is required.
-
-To enable it:
-
-1. Create an iBroadcast account if needed, then sign in to the web player in a browser your agent can control, including file uploads.
-2. Install the iBroadcast phone app and sign in to the same account.
-3. Invoke the listening skill and ask: “Set up iBroadcast playlists for my lessons, including existing lessons.” Confirm the resulting playlists on your phone. If they are missing, use **Profile → Settings → Library → Refresh Library Now**.
-
-The skill uploads only the complete, fully processed final audio identified in each lesson's Markdown. Final files use `<nn>-<topic>.mp3`, starting at `01` in lesson order; scratch, investigation, setup, card and supplemental clips are excluded. New lessons render directly to MP3; only older final WAVs need conversion with `mp3-copy`.
-
-You get one playlist per lesson and one per language, combining dialects and placing the newest lesson first. After setup, preparing, revising or superseding lessons through the skill updates the affected playlists.
-
-Without browser control, the skill provides the final MP3 paths and manual upload and playlist instructions. See the [iBroadcast workflow](skills/language-jutsu-listening/references/ibroadcast.md) for details.
-
-### Reminders
-
-On request, the skill sets up two separate daily reminders in the same chat: one at 17:00 to choose and prepare tomorrow's lesson, and one at 12:00 to start today's, in America/Chicago. Each time is editable independently. Installing the skill does not activate them. They use the desktop app's scheduled tasks; see [scheduling.md](skills/language-jutsu-listening/references/scheduling.md).
-
-### Example prompts
-
-```text
-/language-jutsu-listening Shami Arabic, basic conversation level, 30 minutes.
-Use https://www.youtube.com/watch?v=mK-xzqnJmSQ from 03:00 to 05:00.
-I lose track of who is replying to what. Short phrases, lots of repetition.
-```
-
-```text
-$language-jutsu-listening Japanese, JLPT N3. A scene from a slice-of-life anime
-about ordering food. 20 minutes, I'll type my answers. Include readings for kanji,
-and make a new Anki deck from the lesson.
-```
-
-```text
-/language-jutsu-listening Set up my daily preparation and start reminders.
-```
-
-Lessons are saved under `listening/` in the repository (`listening/YYYY-MM-DD/task.md`), so a later session resumes from the pending turn.
-
 ## Languages
 
 Pass a code or one of these names to `--language`. Names are case-insensitive and normalize to the listed code in metadata and transcription requests. Other nonempty language labels remain accepted for audio processing; `--dialect` remains an optional label.
@@ -394,6 +408,8 @@ Pass a code or one of these names to `--language`. Names are case-insensitive an
 All listed languages can use decoding, segmentation, sequencing and study-audio rendering. Transcription support follows the [whisper.cpp language table](https://github.com/ggml-org/whisper.cpp/blob/master/src/whisper.cpp) (`g_lang`); the [large-v3 model introduced the Cantonese token](https://huggingface.co/openai/whisper-large-v3).
 
 ## Validation status
+
+The rewritten lesson design is undergoing a real learner session; human usability is not yet accepted.
 
 The integration suite invokes the real CLI and FFmpeg. It checks exact decoded samples, window selection, pause boundaries, both sequence orders, joined pauses, pitch/duration, stereo channels, repeats, gaps, and output protection. Additional checks exercise standalone defaults from another directory, live edits to the default recipe, `--check` without media tools, an unwritable directory, and an unavailable encoder. Transcription tests run whisper.cpp with `ggml-tiny.bin` on real public-domain English and Japanese speech ([sources](tests/fixtures/SOURCES.md)). Synthetic language-label checks do not establish spoken-audio quality in those languages.
 

@@ -27,7 +27,7 @@ The existing `scripts/compare_audio.py` is an optional Qwen2-Audio comparison us
 Prepare its input through Jutsu with the bundled one-play format, keeping enough context for the disputed wording:
 
 ```sh
-cargo run --quiet --manifest-path "$repo/Cargo.toml" -- "$source" \
+"$jutsu" "$source" \
   --language "$language" --start "$start" --end "$end" \
   --format "$skill/assets/reference.json" \
   --output "$lesson/evidence.wav" --metadata-output "$lesson/evidence.json"

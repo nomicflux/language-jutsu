@@ -37,7 +37,7 @@ Use the lesson's saved date and title, not today's sync date. Keep lesson album 
 1. Use the final files identified above. Compare them with the previous `iBroadcast` record and the actual library to identify new, unchanged, replaced, incorrectly included and superseded tracks. Previous sync records describe what happened; they do not validate the source selection. Reuse current final MP3s directly. Only for an older final WAV without a current MP3 copy, use the existing CLI:
 
    ```sh
-   cargo run -- mp3-copy '<player>.wav' --title '<player label>' \
+   "$jutsu" mp3-copy '<player>.wav' --title '<player label>' \
      --album 'YYYY-MM-DD <lesson title>' --artist '<language>' \
      --track 1 --output '01-<topic>.mp3'
    ```

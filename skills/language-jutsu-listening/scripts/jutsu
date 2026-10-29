@@ -1,0 +1,13 @@
+#!/bin/sh
+# Invoke the installed runtime, or the existing source checkout during development.
+set -eu
+scripts=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+root=$(CDPATH= cd -- "$scripts/../../.." && pwd -P)
+if [ -x "$root/bin/language-jutsu" ]; then
+    exec "$root/bin/language-jutsu" "$@"
+fi
+if [ -f "$root/Cargo.toml" ]; then
+    exec cargo run --quiet --manifest-path "$root/Cargo.toml" -- "$@"
+fi
+printf 'Language Jutsu is not installed here. Run the installer again.\n' >&2
+exit 1
