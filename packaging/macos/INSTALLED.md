@@ -1,11 +1,23 @@
-# Language Jutsu for Mac
+# Language Jutsu
 
-This folder contains the installed program, its runtime tools, formats, and listening skill.
+Open Codex or Claude Code to start a listening lesson.
 
-Invoke `bin/language-jutsu` by its absolute path. It forwards all arguments and finds the bundled tools without changing your working directory or shell settings. Use `--help` for command options. The skill's `scripts/jutsu` runner invokes this same launcher.
+In Codex, enter:
 
-Guided lessons run in Codex or Claude Code. Invoke `$language-jutsu-listening` in Codex or `/language-jutsu-listening` in Claude Code. Restart the assistant if the skill does not appear.
+```text
+$language-jutsu-listening Help me choose and prepare my first listening lesson.
+```
 
-Lessons are saved in `~/Documents/Language Jutsu/listening/` unless you choose another location. The default speech model is downloaded automatically into the Hugging Face cache, normally `~/.cache/huggingface/hub/`. The program also honors `HF_HUB_CACHE`, `HF_HOME`, and `XDG_CACHE_HOME` when present in its environment.
+In Claude Code, enter:
 
-Run a newer installer to update this folder. Lessons and cached models are kept separately. Third-party notices are in `licenses/` and `runtime/_internal/THIRD_PARTY_LICENSES.txt`; the distribution includes a companion source archive.
+```text
+/language-jutsu-listening Help me choose and prepare my first listening lesson.
+```
+
+Restart your assistant if the listening skill does not appear. Describe your language, level, interests and available time; you can also supply a recording or video.
+
+Your lessons are saved in **Documents → Language Jutsu → listening**, unless you choose another location.
+
+To update, download a newer installer from [Releases](https://github.com/nomicflux/language-jutsu/releases) and run it. Your lessons and downloaded speech model are retained.
+
+Third-party license notices are in `licenses/` and `runtime/_internal/THIRD_PARTY_LICENSES.txt`.
