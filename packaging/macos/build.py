@@ -169,8 +169,31 @@ def assemble():
     resources = contents / "Resources"
     macos.mkdir(parents=True)
     resources.mkdir()
+    compiler = os.environ.get("SWIFT_EXEC", "swiftc")
+    compiler_flags = []
+    if not os.environ.get("SWIFT_EXEC"):
+        toolchain_compiler = subprocess.check_output(["xcrun", "--find", "swiftc"], text=True).strip()
+        swift_headers = Path(toolchain_compiler).parent.parent / "include/swift"
+        legacy_map = swift_headers / "module.modulemap"
+        bridging_map = swift_headers / "bridging.modulemap"
+        # Some Command Line Tools installations contain the same module twice.
+        # Hide only the identical legacy definition for this build; leave the SDK alone.
+        if legacy_map.is_file() and bridging_map.is_file():
+            legacy = re.sub(r"//[^\n]*", "", legacy_map.read_text()).strip()
+            bridging = re.sub(r"//[^\n]*", "", bridging_map.read_text()).strip()
+            if legacy == bridging and "module SwiftBridging" in legacy:
+                empty = WORK / "empty.modulemap"
+                empty.write_text("")
+                overlay = WORK / "swift-overlay.json"
+                aliases = [legacy_map]
+                capitalized = swift_headers.with_name("Swift") / legacy_map.name
+                if capitalized.is_file() and capitalized.samefile(legacy_map):
+                    aliases.append(capitalized)
+                overlay.write_text(json.dumps({"version": 0, "roots": [
+                    {"type": "file", "name": str(path), "external-contents": str(empty)} for path in aliases]}))
+                compiler_flags = ["-vfsoverlay", overlay]
     for architecture in ("arm64", "x86_64"):
-        run(os.environ.get("SWIFT_EXEC", "swiftc"), "-swift-version", "5", "-O", "-target", f"{architecture}-apple-macosx{MINIMUM}",
+        run(compiler, *compiler_flags, "-swift-version", "5", "-O", "-target", f"{architecture}-apple-macosx{MINIMUM}",
             "-module-cache-path", WORK / "swift-cache", HERE / "InstallerCore.swift", HERE / "InstallerApp.swift", HERE / "InstallerMain.swift",
             "-o", WORK / f"Installer-{architecture}")
     run("lipo", "-create", WORK / "Installer-arm64", WORK / "Installer-x86_64", "-output", macos / "Installer")

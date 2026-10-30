@@ -73,11 +73,11 @@ To update Language Jutsu, download a newer installer from [Releases](https://git
 
 ### Mac installer
 
-**[Download Language Jutsu for Mac](https://github.com/nomicflux/language-jutsu/releases/download/v0.1.0/Language-Jutsu-0.1.0-unsigned.dmg)**
+**[Download Language Jutsu for Mac](https://github.com/nomicflux/language-jutsu/releases/latest)**
 
 Requires macOS 13 or later, on an Apple Silicon or Intel Mac. Guided lessons run in [Codex](https://developers.openai.com/codex/app/) or [Claude Code](https://code.claude.com/docs/en/desktop-quickstart); install one and sign in if you have not already.
 
-1. Download the installer using the link above.
+1. Follow the link above and download the `.dmg` file under **Assets**.
 2. Open the downloaded `.dmg`, then double-click **Install Language Jutsu**.
 3. If macOS blocks it, open **System Settings → Privacy & Security**, find the blocked-app message, and choose **Open Anyway**. Confirm when prompted. The installer is unsigned.
 4. Click **Install**. Keep your internet connection available while the speech model downloads automatically (about 1.5 GiB on the first installation). You do not need to choose a model or install programming tools.
@@ -122,11 +122,3 @@ cargo build --release --locked
 ```
 
 The executable is `target/release/language-jutsu` (`language-jutsu.exe` on Windows). Pass `--format formats/default.json` when processing audio from the repository, or copy the `formats/` folder beside the executable.
-
-### Build and publish a new Mac installer
-
-1. Update the version in `Cargo.toml` and the matching `language-jutsu` entry in `Cargo.lock`, then commit and push your changes.
-2. Open [Actions → Mac installer](https://github.com/nomicflux/language-jutsu/actions/workflows/macos-installer.yml), click **Run workflow**, and select the branch to build.
-3. When the run succeeds, download **Language-Jutsu-Mac-installer-unsigned** from its **Artifacts** section.
-4. Create a release on the [Releases page](https://github.com/nomicflux/language-jutsu/releases), using a `v<version>` tag at the commit you built. Attach the `.dmg`, `dependency-sources.tar.gz`, and `OPENING.txt` from the downloaded artifact, then publish the release.
-5. Update this README's Mac download link to the new `.dmg`.

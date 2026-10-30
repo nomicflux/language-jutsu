@@ -1,4 +1,4 @@
-# Mac installer
+# Building the Mac installer (maintainers)
 
 Produces `target/macos/Language-Jutsu-<version>-unsigned.dmg` with a universal native setup app and two prebuilt runtime payloads. Distribution is **unsigned and not notarized**, as requested. The local ad-hoc app signature does not establish publisher trust. [OPENING.txt](OPENING.txt) explains the normal macOS Open Anyway flow; setup does not disable Gatekeeper or remove quarantine attributes.
 
@@ -6,33 +6,25 @@ Produces `target/macos/Language-Jutsu-<version>-unsigned.dmg` with a universal n
 
 Release builders need macOS, Command Line Tools, Rust with the relevant Apple target, CMake, and Python 3.11+. End users need none of these. Dependency versions and SHA-256 hashes are pinned in [dependencies.json](dependencies.json). FFmpeg and LAME are compiled into portable executables; yt-dlp and Deno come from official release artifacts. whisper.cpp's Metal library is embedded by whisper-rs-sys.
 
-On the corresponding native builder:
+From the repository, build both architectures and package the current checkout:
 
 ```sh
-python3 packaging/macos/build.py payload --arch arm64
-# On the Intel builder:
-python3 packaging/macos/build.py payload --arch x86_64
+./scripts/package-macos.sh
 ```
 
-Copy both architecture directories into `target/macos/payloads/` on the assembly Mac, preserving symlinks and executable modes. Then:
-
-```sh
-python3 packaging/macos/build.py assemble
-tar -czf target/macos/dependency-sources.tar.gz -C target/macos sources
-```
-
-Cross-compiling both payloads on one Mac is also supported when both Rust targets are installed. The [workflow](../../.github/workflows/macos-installer.yml) uses separate native builders, tests their payloads, then produces one downloadable artifact with the DMG, dependency sources, and opening instructions. It does not publish a GitHub release. Distribute the source archive alongside the DMG and retain the included license notices, including yt-dlp's bundled third-party notices. yt-dlp's standalone distribution contains copyleft components; its own source license alone does not describe the combined binary.
+The script installs missing Rust targets and writes `Language-Jutsu-<version>-unsigned.dmg`, `dependency-sources.tar.gz`, and `OPENING.txt` to `target/macos/`. It uses the version in `Cargo.toml`. Run the DMG to update a local installation. The [workflow](../../.github/workflows/macos-installer.yml) remains available for separate native builders. Distribute the source archive alongside the DMG and retain the included license notices.
 
 The binary deployment target and installer minimum are macOS 13.0. Packaging rejects binaries with a higher declared deployment minimum, missing CPU slices, or absolute dependencies outside macOS system libraries. Native validation on the oldest supported OS remains necessary before claiming that OS has been tested. `SWIFT_EXEC` can select a compatible Swift compiler without changing the system's toolchain selection.
 
 ## Build and publish a new version
 
-1. Update the package version in `Cargo.toml` and the matching `language-jutsu` entry in `Cargo.lock`, then commit and push the version and source changes.
-2. Open [Actions → Mac installer](https://github.com/nomicflux/language-jutsu/actions/workflows/macos-installer.yml), choose **Run workflow**, and select the branch to build. The workflow must be present on the default branch to run manually; see [GitHub's instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
-3. After the run succeeds, download **Language-Jutsu-Mac-installer-unsigned** from its **Artifacts** section. This contains the versioned DMG, `dependency-sources.tar.gz`, and `OPENING.txt`. [Artifact downloads](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts) require signing into GitHub and expire according to repository retention settings.
-4. To host downloads for end users, [create a GitHub release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) tagged `v<version>` at the commit that was built. Attach the DMG, dependency sources and opening instructions, then publish it. Downloads will appear on the project's [Releases page](https://github.com/nomicflux/language-jutsu/releases). Update the root README's availability statement when the first release is published.
+Update the package version in `Cargo.toml` and the matching `language-jutsu` entry in `Cargo.lock`, then commit and push. With GitHub CLI authenticated (`gh auth login`), run:
 
-The workflow builds artifacts only; it does not publish a release automatically. The local build commands above produce the same files for manual release upload.
+```sh
+./scripts/package-macos.sh --publish
+```
+
+This builds the installer, uploads all three files to a draft release tagged `v<version>` at the current commit, then publishes it as Latest. It refuses to reuse an existing tag. The user README's download link automatically follows the latest release.
 
 ## Installation and updates
 
