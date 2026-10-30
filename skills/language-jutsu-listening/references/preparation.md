@@ -22,7 +22,7 @@ The retained original and its `.source.json` companion stay together. Use that l
 
 For a long episode with a known relevant interval, add `--start` and `--end` to that acquisition/transcription command. `--save-source` still retains the full original for later selections; transcription then processes the selected interval. Repeat acquisition only for genuinely different sources.
 
-For a public publisher/RSS/direct-media URL, resolve the actual audio link from the full page or feed, download that recording into the lesson directory, and record submitted page, final media URL, publisher identity, and download date in `sources.md`. For a supplied local file, use a retained copy or a stable original path. Do not pass a generic page or Spotify URL to the YouTube-only parser or use a preview as the full requested recording. Investigate the provider's actual public media route; an acquisition failure does not authorize content substitution.
+For a public publisher/RSS/direct-media URL, resolve the actual audio link from the full page or feed, download that recording into the lesson directory, and record submitted page, final media URL, publisher identity, and download date in `sources.md`. For a supplied local file, use a retained copy or a stable original path. Do not pass a generic page or Spotify URL to the YouTube-only parser or use a preview as the full requested recording. Investigate the provider's actual public media route; an acquisition failure does not authorize substituting a user-specified recording. Replace an inaccessible agent-selected source with suitable material and continue.
 
 ## Produce source-language text
 
@@ -64,4 +64,4 @@ Build and review the teaching around these finished app outputs. Read the app's 
 
 ## Adapt the processed practice
 
-For focused practice, select the relevant exchange on the original recording, retaining the prompt, response and referents. Configure its practice in the format JSON, rerun the same sequence/render commands under distinct output names, and inspect the app's output before presenting it. Jutsu still performs all segmentation, sequencing and joining. If supported settings cannot produce suitable practice, report the specific limitation; do not implement a substitute audio pipeline.
+For focused practice, select the relevant exchange on the original recording, retaining the prompt, response and referents. Configure its practice in the format JSON, rerun the same sequence/render commands under distinct output names, and review the resulting audio before presenting it. Revise processing or replace unsuitable passages you selected, then rebuild the affected lesson material. Jutsu performs all segmentation, sequencing and joining.

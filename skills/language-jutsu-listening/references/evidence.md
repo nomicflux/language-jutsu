@@ -14,7 +14,7 @@ Never change wording merely because another form is more common, standard, polit
 
 Publisher text must belong to the exact recording. Translated subtitles can support meaning but cannot establish source-language wording. Keep publisher text, unprompted transcription and your interpretation distinct. Check answer-critical speaker relationships, negation, numbers and referents in their enclosing exchange.
 
-If the evidence does not resolve the wording, leave the transcript unchanged, mark the uncertainty separately and do not teach that wording as established or use it as an answer key. Resolve uncertainty that prevents the requested lesson; if it remains unresolved, state the concrete limitation. Do not replace the requested substantive conversation with its one easy fact or mark a learner wrong on unresolved evidence.
+Resolve wording needed for teaching and answers using the recording and its context. If it remains uncertain, leave the transcript unchanged and mark the uncertainty separately. Replace unsuitable passages you selected and continue preparing the lesson. Do not teach uncertain wording as established, use it as an answer key, or reduce the requested substantive conversation to its one easy fact.
 
 Apply supported corrections consistently to dependent translations, vocabulary, grammar, questions and cards. Their wording must come from the source, not merely agree with an edited transcript. This evidence work supports constructing the lesson; it is not a substitute for it.
 
